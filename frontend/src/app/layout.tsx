@@ -18,9 +18,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen bg-white dark:bg-surface-dark text-gray-900 dark:text-gray-100 font-sans">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-brand-500 focus:text-white focus:text-sm focus:font-medium"
+        >
+          Skip to main content
+        </a>
         <ThemeProvider>
           <Navbar />
-          {children}
+          <div id="main-content">{children}</div>
         </ThemeProvider>
       </body>
     </html>
