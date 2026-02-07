@@ -50,7 +50,7 @@ class TestHttpImageAnalysisTool:
     @pytest.mark.asyncio
     @respx.mock
     async def test_successful_image_analysis(self, tool):
-        respx.post(f"{MOCK_ENDPOINT}/predict").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -90,7 +90,7 @@ class TestHttpImageAnalysisTool:
     @pytest.mark.asyncio
     @respx.mock
     async def test_empty_findings(self, tool):
-        respx.post(f"{MOCK_ENDPOINT}/predict").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(200, json={"modality_detected": "ct", "findings": []})
         )
         result = await tool.execute(image_url="http://images/ct.png")
@@ -122,7 +122,7 @@ class TestHttpTextReasoningTool:
     @pytest.mark.asyncio
     @respx.mock
     async def test_successful_text_reasoning(self, tool):
-        respx.post(f"{MOCK_ENDPOINT}/predict").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -170,7 +170,7 @@ class TestHttpAudioAnalysisTool:
     @pytest.mark.asyncio
     @respx.mock
     async def test_successful_audio_analysis(self, tool):
-        respx.post(f"{MOCK_ENDPOINT}/predict").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -215,7 +215,7 @@ class TestHttpHistorySearchTool:
     @pytest.mark.asyncio
     @respx.mock
     async def test_successful_history_search(self, tool):
-        respx.post(f"{MOCK_ENDPOINT}/search").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -242,7 +242,7 @@ class TestHttpHistorySearchTool:
         assert result.timeline_context == "No prior respiratory issues noted"
 
     def test_uses_search_path(self, tool):
-        assert tool._get_path() == "/search"
+        assert tool._get_path() == "/search"  # HttpHistorySearchTool still overrides (unused in prod)
 
     def test_interface_compliance(self, tool):
         assert tool.name == ToolName.HISTORY_SEARCH
@@ -265,7 +265,7 @@ class TestHttpToolResilience:
     @respx.mock
     async def test_retry_on_server_error(self, tool):
         """500 on first try → success on second try."""
-        route = respx.post(f"{MOCK_ENDPOINT}/predict")
+        route = respx.post(f"{MOCK_ENDPOINT}")
         route.side_effect = [
             httpx.Response(500, json={"error": "Internal server error"}),
             httpx.Response(200, json={"modality_detected": "xray", "findings": []}),
@@ -280,7 +280,7 @@ class TestHttpToolResilience:
     async def test_no_retry_on_client_error(self):
         """400-level errors should not be retried."""
         tool = HttpImageAnalysisTool(endpoint=MOCK_ENDPOINT, max_retries=2)
-        route = respx.post(f"{MOCK_ENDPOINT}/predict")
+        route = respx.post(f"{MOCK_ENDPOINT}")
         route.mock(return_value=httpx.Response(400, json={"error": "Bad request"}))
 
         with pytest.raises(RuntimeError, match="failed after"):
@@ -292,7 +292,7 @@ class TestHttpToolResilience:
     @respx.mock
     async def test_exhausted_retries_raises(self):
         tool = HttpImageAnalysisTool(endpoint=MOCK_ENDPOINT, max_retries=1)
-        respx.post(f"{MOCK_ENDPOINT}/predict").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(503, json={"error": "Service unavailable"})
         )
 

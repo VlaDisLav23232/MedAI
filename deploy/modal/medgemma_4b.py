@@ -40,7 +40,7 @@ image = (
     image=image,
     gpu="A10G",
     timeout=600,
-    scaledown_window=300,  # Keep warm for 5 min after last request
+    scaledown_window=900,  # Keep warm for 15 min after last request
     secrets=[modal.Secret.from_name("huggingface-secret")],
     volumes={"/root/.cache/huggingface": hf_cache},
 )
@@ -98,13 +98,17 @@ class MedGemma4B:
                 "Analyze the provided medical image and return a JSON response with the following structure:\n"
                 '{"modality_detected": "<xray|ct|mri|ultrasound|fundus|dermatology|histopathology|other>",\n'
                 ' "findings": [{"finding": "<description>", "confidence": <0.0-1.0>, '
-                '"explanation": "<detailed explanation>", "severity": "<none|mild|moderate|severe|critical>", '
+                '"explanation": "<detailed clinical explanation>", "severity": "<none|mild|moderate|severe|critical>", '
                 '"region_bbox": [x1,y1,x2,y2] or null}],\n'
                 ' "differential_diagnoses": ["<diagnosis1>", ...],\n'
                 ' "recommended_followup": ["<action1>", ...],\n'
                 ' "attention_heatmap_url": null,\n'
                 ' "embedding_id": null}\n'
-                "Return ONLY valid JSON, no markdown formatting."
+                "\nIMPORTANT RULES:\n"
+                "- confidence is your self-assessed certainty (NOT a calibrated probability).\n"
+                "- region_bbox is an approximate pixel region [x1,y1,x2,y2] if you can localize the finding. "
+                "Set to null if you cannot confidently localize it. Do NOT guess random coordinates.\n"
+                "- Return ONLY valid JSON, no markdown formatting or code fences."
             )
 
             user_text = clinical_context

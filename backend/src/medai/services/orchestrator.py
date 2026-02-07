@@ -237,10 +237,9 @@ class ClaudeOrchestrator(BaseOrchestrator):
         tool_calls: list[ToolUseBlock],
         results: SpecialistResults,
     ) -> list[dict[str, Any]]:
-        """Execute tool calls from Claude and format results for conversation."""
-        tool_result_blocks = []
+        """Execute tool calls from Claude in parallel and format results for conversation."""
 
-        for tool_call in tool_calls:
+        async def _run_one(tool_call: ToolUseBlock) -> dict[str, Any]:
             tool_name_str = tool_call.name
             tool_input = tool_call.input  # type: ignore
 
@@ -254,23 +253,26 @@ class ClaudeOrchestrator(BaseOrchestrator):
                 # Store in results
                 results.results[tool_name_str] = output
 
-                tool_result_blocks.append({
+                content = output.model_dump_json() if hasattr(output, "model_dump_json") else json.dumps(output)
+                return {
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
-                    "content": output.model_dump_json(),
-                })
+                    "content": content,
+                }
 
             except Exception as e:
                 logger.error("tool_call_failed", tool=tool_name_str, error=str(e))
                 results.errors[tool_name_str] = str(e)
-                tool_result_blocks.append({
+                return {
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
                     "content": json.dumps({"error": str(e)}),
                     "is_error": True,
-                })
+                }
 
-        return tool_result_blocks
+        # Run all tool calls concurrently
+        tool_result_blocks = await asyncio.gather(*[_run_one(tc) for tc in tool_calls])
+        return list(tool_result_blocks)
 
     async def _generate_report(
         self,

@@ -40,9 +40,9 @@ logger = structlog.get_logger()
 
 # ── Retry / timeout defaults ──────────────────────────────
 
-DEFAULT_TIMEOUT = 60.0  # seconds (models can be slow)
+DEFAULT_TIMEOUT = 300.0  # seconds (Modal cold starts can take 2-5 min)
 MAX_RETRIES = 2
-RETRY_BACKOFF = 1.0  # base seconds for exponential backoff
+RETRY_BACKOFF = 2.0  # base seconds for exponential backoff
 
 
 class _HttpToolBase(BaseTool):
@@ -76,8 +76,12 @@ class _HttpToolBase(BaseTool):
         raise NotImplementedError
 
     def _get_path(self) -> str:
-        """URL path for this tool's inference endpoint."""
-        return "/predict"
+        """URL path for this tool's inference endpoint.
+
+        Modal @fastapi_endpoint embeds the function name in the subdomain,
+        so the actual endpoint is at the root path '/'.
+        """
+        return ""
 
     # ── Core HTTP execution with retry ─────────────────────
 
@@ -89,7 +93,7 @@ class _HttpToolBase(BaseTool):
         last_error: Exception | None = None
         for attempt in range(self._max_retries + 1):
             try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                async with httpx.AsyncClient(timeout=self._timeout, follow_redirects=True) as client:
                     response = await client.post(url, json=payload)
                     response.raise_for_status()
                     data = response.json()

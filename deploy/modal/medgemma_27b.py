@@ -48,7 +48,7 @@ image = (
     image=image,
     gpu=GPU_TYPE,
     timeout=600,
-    scaledown_window=300,
+    scaledown_window=900,  # Keep warm for 15 min after last request
     secrets=[modal.Secret.from_name("huggingface-secret")],
     volumes={"/root/.cache/huggingface": hf_cache},
 )
