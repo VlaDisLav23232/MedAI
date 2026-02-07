@@ -1,0 +1,246 @@
+"""Domain entities — pure data models representing core business concepts.
+
+These are the immutable contracts of the system.
+All tools, services and API routes operate on these types.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date, datetime
+from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Enums
+# ═══════════════════════════════════════════════════════════════
+
+class Gender(str, Enum):
+    MALE = "male"
+    FEMALE = "female"
+    OTHER = "other"
+    UNKNOWN = "unknown"
+
+
+class EncounterType(str, Enum):
+    CONSULTATION = "consultation"
+    FOLLOW_UP = "follow_up"
+    EMERGENCY = "emergency"
+    IMAGING = "imaging"
+    LAB = "lab"
+
+
+class EncounterStatus(str, Enum):
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class TimelineEventType(str, Enum):
+    ENCOUNTER = "encounter"
+    IMAGING = "imaging"
+    LAB = "lab"
+    AUDIO = "audio"
+    AI_REPORT = "ai_report"
+    NOTE = "note"
+
+
+class ApprovalStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    EDITED = "edited"
+    REJECTED = "rejected"
+
+
+class Severity(str, Enum):
+    NONE = "none"
+    MILD = "mild"
+    MODERATE = "moderate"
+    SEVERE = "severe"
+    CRITICAL = "critical"
+
+
+class Modality(str, Enum):
+    XRAY = "xray"
+    CT = "ct"
+    MRI = "mri"
+    ULTRASOUND = "ultrasound"
+    FUNDUS = "fundus"
+    DERMATOLOGY = "dermatology"
+    HISTOPATHOLOGY = "histopathology"
+    OTHER = "other"
+
+
+class JudgeVerdict(str, Enum):
+    CONSENSUS = "consensus"
+    CONFLICT = "conflict"
+
+
+class ToolName(str, Enum):
+    """Registered tool identifiers — extend this enum to add new tools."""
+    IMAGE_ANALYSIS = "image_analysis"
+    TEXT_REASONING = "text_reasoning"
+    AUDIO_ANALYSIS = "audio_analysis"
+    HISTORY_SEARCH = "history_search"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Core Entities
+# ═══════════════════════════════════════════════════════════════
+
+class Patient(BaseModel):
+    """Core patient record."""
+    id: str = Field(default_factory=lambda: f"PT-{uuid.uuid4().hex[:8].upper()}")
+    name: str
+    date_of_birth: date
+    gender: Gender = Gender.UNKNOWN
+    medical_record_number: str | None = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Encounter(BaseModel):
+    """A single patient-doctor interaction."""
+    id: str = Field(default_factory=lambda: f"ENC-{uuid.uuid4().hex[:8].upper()}")
+    patient_id: str
+    date: datetime = Field(default_factory=datetime.utcnow)
+    encounter_type: EncounterType = EncounterType.CONSULTATION
+    chief_complaint: str | None = None
+    status: EncounterStatus = EncounterStatus.IN_PROGRESS
+
+
+class TimelineEvent(BaseModel):
+    """A single entry on the patient timeline."""
+    id: str = Field(default_factory=lambda: f"TL-{uuid.uuid4().hex[:8].upper()}")
+    patient_id: str
+    date: datetime
+    event_type: TimelineEventType
+    summary: str
+    source_id: str | None = None
+    source_type: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Tool Output Contracts
+# ═══════════════════════════════════════════════════════════════
+
+class Finding(BaseModel):
+    """A single clinical finding from any specialist tool."""
+    finding: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    explanation: str
+    severity: Severity = Severity.NONE
+    region_bbox: list[int] | None = None  # [x1, y1, x2, y2] for images
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EvidenceCitation(BaseModel):
+    """Reference to source data supporting a finding."""
+    source: str
+    source_type: str = "unknown"  # "patient_history", "lab_result", "imaging", etc.
+    relevant_excerpt: str
+    date: datetime | None = None
+
+
+class ImageAnalysisOutput(BaseModel):
+    """Contract for Image Analysis Tool output."""
+    tool: str = ToolName.IMAGE_ANALYSIS
+    modality_detected: Modality
+    findings: list[Finding]
+    attention_heatmap_url: str | None = None
+    embedding_id: str | None = None
+    differential_diagnoses: list[str] = Field(default_factory=list)
+    recommended_followup: list[str] = Field(default_factory=list)
+
+
+class TextReasoningOutput(BaseModel):
+    """Contract for Text Reasoning Tool output."""
+    tool: str = ToolName.TEXT_REASONING
+    reasoning_chain: list[dict[str, Any]]
+    assessment: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_citations: list[EvidenceCitation] = Field(default_factory=list)
+    plan_suggestions: list[str] = Field(default_factory=list)
+    contraindication_flags: list[str] = Field(default_factory=list)
+
+
+class AudioSegment(BaseModel):
+    """A single analyzed audio segment."""
+    time_start: float
+    time_end: float
+    classification: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class AudioAnalysisOutput(BaseModel):
+    """Contract for Audio Analysis Tool output."""
+    tool: str = ToolName.AUDIO_ANALYSIS
+    audio_type: str  # "breathing", "cough", "lung_sounds"
+    segments: list[AudioSegment]
+    summary: str
+    abnormal_segment_timestamps: list[float] = Field(default_factory=list)
+    embedding_id: str | None = None
+
+
+class HistoryRecord(BaseModel):
+    """A single retrieved historical record."""
+    date: datetime
+    record_type: str  # "imaging", "lab", "encounter", etc.
+    summary: str
+    similarity_score: float = Field(ge=0.0, le=1.0)
+    clinical_relevance: str
+
+
+class HistorySearchOutput(BaseModel):
+    """Contract for History Search Tool output."""
+    tool: str = ToolName.HISTORY_SEARCH
+    patient_id: str
+    relevant_records: list[HistoryRecord]
+    timeline_context: str
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Aggregated Types
+# ═══════════════════════════════════════════════════════════════
+
+# Union of all tool outputs for type-safe handling
+ToolOutput = ImageAnalysisOutput | TextReasoningOutput | AudioAnalysisOutput | HistorySearchOutput
+
+
+class SpecialistResults(BaseModel):
+    """Collection of all specialist tool results for a single case."""
+    results: dict[str, ToolOutput] = Field(default_factory=dict)
+    errors: dict[str, str] = Field(default_factory=dict)
+
+
+class JudgmentResult(BaseModel):
+    """Output of the Judge Agent."""
+    verdict: JudgeVerdict
+    confidence: float = Field(ge=0.0, le=1.0)
+    reasoning: str
+    contradictions: list[str] = Field(default_factory=list)
+    low_confidence_items: list[str] = Field(default_factory=list)
+    missing_context: list[str] = Field(default_factory=list)
+    requery_tools: list[ToolName] = Field(default_factory=list)
+
+
+class FinalReport(BaseModel):
+    """The final structured report presented to the doctor."""
+    id: str = Field(default_factory=lambda: f"RPT-{uuid.uuid4().hex[:8].upper()}")
+    encounter_id: str
+    patient_id: str
+    diagnosis: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_summary: str
+    timeline_impact: str
+    plan: list[str]
+    findings: list[Finding]
+    reasoning_trace: list[dict[str, Any]] = Field(default_factory=list)
+    specialist_outputs: dict[str, Any] = Field(default_factory=dict)
+    judge_verdict: JudgmentResult | None = None
+    approval_status: ApprovalStatus = ApprovalStatus.PENDING
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    doctor_notes: str | None = None

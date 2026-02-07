@@ -1,0 +1,113 @@
+"""API-level schemas — request/response shapes for FastAPI endpoints.
+
+Separated from domain entities to keep API contract independent of internals.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from medai.domain.entities import (
+    ApprovalStatus,
+    Finding,
+    JudgmentResult,
+    Modality,
+)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Case Analysis — Request / Response
+# ═══════════════════════════════════════════════════════════════
+
+class CaseAnalysisRequest(BaseModel):
+    """Doctor submits a case for AI analysis."""
+    patient_id: str
+    encounter_id: str | None = None
+    image_urls: list[str] = Field(default_factory=list)
+    audio_urls: list[str] = Field(default_factory=list)
+    clinical_context: str = ""
+    doctor_query: str
+    patient_history_text: str | None = None
+    lab_results: list[dict[str, Any]] | None = None
+
+
+class CaseAnalysisResponse(BaseModel):
+    """AI analysis result returned to the doctor."""
+    report_id: str
+    encounter_id: str
+    patient_id: str
+    diagnosis: str
+    confidence: float
+    evidence_summary: str
+    timeline_impact: str
+    plan: list[str]
+    findings: list[Finding]
+    reasoning_trace: list[dict[str, Any]]
+    judge_verdict: JudgmentResult | None = None
+    approval_status: ApprovalStatus = ApprovalStatus.PENDING
+    created_at: datetime
+    # Explainability artifacts
+    heatmap_urls: list[str] = Field(default_factory=list)
+    specialist_summaries: dict[str, str] = Field(default_factory=dict)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Report Approval
+# ═══════════════════════════════════════════════════════════════
+
+class ReportApprovalRequest(BaseModel):
+    """Doctor approves, edits, or rejects an AI report."""
+    report_id: str
+    status: ApprovalStatus
+    doctor_notes: str | None = None
+    edits: dict[str, Any] | None = None
+
+
+class ReportApprovalResponse(BaseModel):
+    """Confirmation of doctor's action on a report."""
+    report_id: str
+    status: ApprovalStatus
+    updated_at: datetime
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Patient & Timeline
+# ═══════════════════════════════════════════════════════════════
+
+class PatientSummary(BaseModel):
+    """Lightweight patient info for lists."""
+    id: str
+    name: str
+    date_of_birth: str
+    gender: str
+
+
+class TimelineEventResponse(BaseModel):
+    """Single timeline entry for the frontend."""
+    id: str
+    date: datetime
+    event_type: str
+    summary: str
+    source_type: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PatientTimelineResponse(BaseModel):
+    """Full patient timeline for the frontend."""
+    patient_id: str
+    events: list[TimelineEventResponse]
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Health Check
+# ═══════════════════════════════════════════════════════════════
+
+class HealthResponse(BaseModel):
+    """API health check response."""
+    status: str = "ok"
+    version: str
+    tools_registered: list[str] = Field(default_factory=list)
+    debug: bool = False
