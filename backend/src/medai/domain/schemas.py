@@ -77,12 +77,28 @@ class ReportApprovalResponse(BaseModel):
 #  Patient & Timeline
 # ═══════════════════════════════════════════════════════════════
 
+class PatientCreateRequest(BaseModel):
+    """Create a new patient record."""
+    name: str
+    date_of_birth: str  # ISO date
+    gender: str = "unknown"
+    medical_record_number: str | None = None
+
+
 class PatientSummary(BaseModel):
     """Lightweight patient info for lists."""
     id: str
     name: str
     date_of_birth: str
     gender: str
+    medical_record_number: str | None = None
+    created_at: datetime
+
+
+class PatientListResponse(BaseModel):
+    """List of patient summaries."""
+    patients: list[PatientSummary]
+    count: int
 
 
 class TimelineEventResponse(BaseModel):
@@ -99,6 +115,24 @@ class PatientTimelineResponse(BaseModel):
     """Full patient timeline for the frontend."""
     patient_id: str
     events: list[TimelineEventResponse]
+    count: int
+
+
+class ReportSummary(BaseModel):
+    """Lightweight report info for lists."""
+    report_id: str
+    encounter_id: str
+    diagnosis: str
+    confidence: float
+    approval_status: str
+    created_at: datetime
+
+
+class PatientReportsResponse(BaseModel):
+    """All reports for a patient."""
+    patient_id: str
+    reports: list[ReportSummary]
+    count: int
 
 
 # ═══════════════════════════════════════════════════════════════

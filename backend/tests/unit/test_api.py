@@ -144,8 +144,19 @@ class TestCaseAnalysisEndpoint:
 class TestApprovalEndpoint:
     @pytest.mark.asyncio
     async def test_approve_report(self, client):
+        # First create a report via the analyze endpoint
+        analyze_payload = {
+            "patient_id": "PT-APPROVE-1",
+            "doctor_query": "Check for approval",
+            "image_urls": ["http://example.com/img.png"],
+        }
+        analyze_resp = await client.post("/api/v1/cases/analyze", json=analyze_payload)
+        assert analyze_resp.status_code == 200
+        report_id = analyze_resp.json()["report_id"]
+
+        # Now approve it
         payload = {
-            "report_id": "RPT-12345678",
+            "report_id": report_id,
             "status": "approved",
             "doctor_notes": "Looks correct",
         }
@@ -153,13 +164,24 @@ class TestApprovalEndpoint:
         assert response.status_code == 200
 
         data = response.json()
-        assert data["report_id"] == "RPT-12345678"
+        assert data["report_id"] == report_id
         assert data["status"] == "approved"
 
     @pytest.mark.asyncio
     async def test_reject_report(self, client):
+        # First create a report
+        analyze_payload = {
+            "patient_id": "PT-REJECT-1",
+            "doctor_query": "Check for rejection",
+            "image_urls": ["http://example.com/img.png"],
+        }
+        analyze_resp = await client.post("/api/v1/cases/analyze", json=analyze_payload)
+        assert analyze_resp.status_code == 200
+        report_id = analyze_resp.json()["report_id"]
+
+        # Now reject it
         payload = {
-            "report_id": "RPT-99999999",
+            "report_id": report_id,
             "status": "rejected",
             "doctor_notes": "Incorrect diagnosis",
         }
@@ -168,3 +190,13 @@ class TestApprovalEndpoint:
 
         data = response.json()
         assert data["status"] == "rejected"
+
+    @pytest.mark.asyncio
+    async def test_approve_nonexistent_report(self, client):
+        """Approving a non-existent report returns 404."""
+        payload = {
+            "report_id": "RPT-NONEXISTENT",
+            "status": "approved",
+        }
+        response = await client.post("/api/v1/cases/approve", json=payload)
+        assert response.status_code == 404

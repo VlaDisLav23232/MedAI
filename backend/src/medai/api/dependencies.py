@@ -11,7 +11,19 @@ from functools import lru_cache
 from anthropic import AsyncAnthropic
 
 from medai.config import Settings, get_settings
-from medai.domain.interfaces import BaseJudge, BaseOrchestrator
+from medai.domain.interfaces import (
+    BaseJudge,
+    BaseOrchestrator,
+    BasePatientRepository,
+    BaseReportRepository,
+    BaseTimelineRepository,
+)
+from medai.repositories.memory import (
+    InMemoryPatientRepository,
+    InMemoryReportRepository,
+    InMemoryTimelineRepository,
+)
+from medai.repositories.seed import create_seed_patients, create_seed_timeline_events
 from medai.services.judge import ClaudeJudge, MockJudge
 from medai.services.orchestrator import ClaudeOrchestrator, MockOrchestrator
 from medai.services.tool_registry import ToolRegistry
@@ -34,6 +46,36 @@ def get_anthropic_client() -> AsyncAnthropic:
     """Create the Anthropic client (singleton)."""
     settings = get_settings()
     return AsyncAnthropic(api_key=settings.anthropic_api_key)
+
+
+@lru_cache(maxsize=1)
+def get_patient_repository() -> BasePatientRepository:
+    """Create the patient repository (singleton).
+
+    In DEBUG mode, seeds demo data automatically.
+    TODO: Swap for SQLAlchemy repo when DB is ready.
+    """
+    repo = InMemoryPatientRepository()
+    settings = get_settings()
+    if settings.debug:
+        repo.seed(create_seed_patients())
+    return repo
+
+
+@lru_cache(maxsize=1)
+def get_timeline_repository() -> BaseTimelineRepository:
+    """Create the timeline repository (singleton)."""
+    repo = InMemoryTimelineRepository()
+    settings = get_settings()
+    if settings.debug:
+        repo.seed(create_seed_timeline_events())
+    return repo
+
+
+@lru_cache(maxsize=1)
+def get_report_repository() -> BaseReportRepository:
+    """Create the report repository (singleton)."""
+    return InMemoryReportRepository()
 
 
 def get_judge() -> BaseJudge:

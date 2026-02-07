@@ -169,3 +169,7 @@ class BaseReportRepository(ABC):
         self, report_id: str, status: str, doctor_notes: str | None = None
     ) -> FinalReport | None:
         ...
+
+    @abstractmethod
+    async def list_for_patient(self, patient_id: str) -> list[FinalReport]:
+        ...

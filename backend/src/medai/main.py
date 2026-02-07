@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from medai import __version__
-from medai.api.routes import health, cases
+from medai.api.routes import health, cases, patients
 from medai.config import get_settings
 
 
@@ -62,6 +62,7 @@ def create_app() -> FastAPI:
     # ── Routes ─────────────────────────────────────────────
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(cases.router, prefix="/api/v1")
+    app.include_router(patients.router, prefix="/api/v1")
 
     return app
 
