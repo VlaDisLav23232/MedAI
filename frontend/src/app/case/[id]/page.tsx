@@ -14,7 +14,7 @@ import {
   mockReasoningSteps,
   mockPatient,
 } from "@/lib/mock-data";
-import * as api from "@/lib/api";
+import { apiClient } from "@/lib/api/client";
 import type { AIReport, Finding, ReasoningStep } from "@/lib/types";
 import {
   ArrowLeft,
@@ -54,7 +54,7 @@ export default function CasePage({
     async function fetchReport() {
       setLoading(true);
       try {
-        const res = await api.getReport(reportId);
+        const res = await apiClient.getReport(reportId);
         if (cancelled) return;
 
         // Map API response to frontend AIReport shape
@@ -111,7 +111,7 @@ export default function CasePage({
 
         // Try fetching patient info
         try {
-          const patientRes = await api.getPatient(res.patient_id);
+          const patientRes = await apiClient.getPatient(res.patient_id);
           if (!cancelled) {
             setPatient({
               id: patientRes.id,
@@ -154,7 +154,7 @@ export default function CasePage({
       setApprovalLoading(true);
       setApprovalError(null);
       try {
-        await api.approveReport({
+        await apiClient.approveReport({
           report_id: report.id,
           status,
           doctor_notes: notes,

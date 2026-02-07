@@ -42,8 +42,8 @@ export function AgentStatusIndicator({ status, className }: AgentStatusIndicator
   const isActive = !["idle", "complete", "error"].includes(status);
 
   return (
-    <div className={cn("flex items-center gap-2", className)}>
-      <div className="relative">
+    <div className={cn("flex items-center gap-2", className)} role="status" aria-live="polite" aria-atomic="true">
+      <div className="relative" aria-hidden="true">
         <Icon size={16} className={cn(config.color, isActive && "animate-pulse")} />
         {isActive && (
           <div className="absolute -inset-1 rounded-full bg-brand-500/20 animate-ping" />

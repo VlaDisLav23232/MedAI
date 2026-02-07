@@ -6,7 +6,7 @@ import { cn, formatDate } from "@/lib/utils";
 import { SeverityBadge } from "@/components/shared/SeverityBadge";
 import { LoadingAnimation } from "@/components/shared/LoadingAnimation";
 import { mockPatient, mockTimelineEvents } from "@/lib/mock-data";
-import * as api from "@/lib/api";
+import { apiClient } from "@/lib/api/client";
 import type { TimelineEvent } from "@/lib/types";
 import {
   ArrowLeft,
@@ -128,8 +128,8 @@ export default function TimelinePage({
       setError(null);
       try {
         const [timelineRes, patientRes] = await Promise.all([
-          api.getPatientTimeline(patientId),
-          api.getPatient(patientId),
+          apiClient.getPatientTimeline(patientId),
+          apiClient.getPatient(patientId),
         ]);
 
         if (cancelled) return;

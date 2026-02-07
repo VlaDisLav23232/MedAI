@@ -101,7 +101,9 @@ export function ApprovalBar({
       {/* Notes */}
       {showNotes && (
         <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-surface-dark-3">
+          <label htmlFor="approval-notes" className="sr-only">Clinical notes or corrections</label>
           <textarea
+            id="approval-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Add clinical notes or corrections..."

@@ -9,10 +9,11 @@ import { Bot, Sparkles } from "lucide-react";
 interface ChatAreaProps {
   messages: ChatMessageType[];
   onCitationClick?: (citationId: string) => void;
+  onPromptClick?: (prompt: string) => void;
   className?: string;
 }
 
-export function ChatArea({ messages, onCitationClick, className }: ChatAreaProps) {
+export function ChatArea({ messages, onCitationClick, onPromptClick, className }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export function ChatArea({ messages, onCitationClick, className }: ChatAreaProps
             ].map((prompt) => (
               <button
                 key={prompt}
+                onClick={() => onPromptClick?.(prompt)}
                 className="flex items-start gap-2 px-4 py-3 rounded-xl text-left text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-surface-dark-2 border border-gray-100 dark:border-gray-800 hover:border-brand-300 dark:hover:border-brand-700 hover:bg-brand-50 dark:hover:bg-brand-900/10 transition-all duration-200 group"
               >
                 <Sparkles size={14} className="text-brand-400 mt-0.5 flex-shrink-0 group-hover:text-brand-500" />

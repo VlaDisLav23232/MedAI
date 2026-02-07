@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/providers/ThemeProvider";
+import { AuthProvider } from "@/providers/AuthProvider";
 import { Navbar } from "@/components/layout/Navbar";
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 
 export const metadata: Metadata = {
   title: "MedAI Clinical Co-Pilot",
@@ -25,8 +27,12 @@ export default function RootLayout({
           Skip to main content
         </a>
         <ThemeProvider>
-          <Navbar />
-          <div id="main-content">{children}</div>
+          <AuthProvider>
+            <Navbar />
+            <ErrorBoundary label="Application">
+              <div id="main-content">{children}</div>
+            </ErrorBoundary>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
