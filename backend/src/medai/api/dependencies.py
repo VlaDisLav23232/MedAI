@@ -27,16 +27,26 @@ from medai.repositories.seed import create_seed_patients, create_seed_timeline_e
 from medai.services.judge import ClaudeJudge, MockJudge
 from medai.services.orchestrator import ClaudeOrchestrator, MockOrchestrator
 from medai.services.tool_registry import ToolRegistry
+from medai.tools.http import register_http_tools
 from medai.tools.mock import register_mock_tools
 
 
 @lru_cache(maxsize=1)
 def get_tool_registry() -> ToolRegistry:
-    """Create and populate the tool registry (singleton)."""
+    """Create and populate the tool registry (singleton).
+
+    DEBUG=true  → mock tools (no GPU needed)
+    DEBUG=false → HTTP tools calling real model endpoints
+    """
+    settings = get_settings()
     registry = ToolRegistry()
-    # Register mock tools for development
-    # TODO: Replace with real tools when Modal endpoints are ready
-    for tool in register_mock_tools().values():
+
+    if settings.debug:
+        tools = register_mock_tools()
+    else:
+        tools = register_http_tools(settings)
+
+    for tool in tools.values():
         registry.register(tool)
     return registry
 
