@@ -19,6 +19,7 @@ from medai.domain.entities import (
     TimelineEvent,
     ToolName,
     ToolOutput,
+    User,
 )
 from medai.domain.schemas import CaseAnalysisRequest
 
@@ -177,4 +178,24 @@ class BaseReportRepository(ABC):
 
     @abstractmethod
     async def list_for_patient(self, patient_id: str) -> list[FinalReport]:
+        ...
+
+
+class BaseUserRepository(ABC):
+    """Abstract user data access."""
+
+    @abstractmethod
+    async def get_by_id(self, user_id: str) -> User | None:
+        ...
+
+    @abstractmethod
+    async def get_by_email(self, email: str) -> User | None:
+        ...
+
+    @abstractmethod
+    async def create(self, user: User) -> User:
+        ...
+
+    @abstractmethod
+    async def list_all(self) -> list[User]:
         ...

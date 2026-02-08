@@ -6,7 +6,9 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from medai.api.auth import get_current_user
 from medai.api.dependencies import get_orchestrator, get_report_repository
+from medai.domain.entities import User
 from medai.domain.interfaces import BaseOrchestrator, BaseReportRepository
 from medai.domain.schemas import (
     CaseAnalysisRequest,
@@ -23,6 +25,7 @@ async def analyze_case(
     request: CaseAnalysisRequest,
     orchestrator: BaseOrchestrator = Depends(get_orchestrator),
     report_repo: BaseReportRepository = Depends(get_report_repository),
+    _current_user: User = Depends(get_current_user),
 ) -> CaseAnalysisResponse:
     """Submit a patient case for AI analysis.
 
@@ -82,6 +85,7 @@ async def analyze_case(
 async def get_report(
     report_id: str,
     report_repo: BaseReportRepository = Depends(get_report_repository),
+    _current_user: User = Depends(get_current_user),
 ) -> CaseAnalysisResponse:
     """Retrieve a previously generated report by ID."""
     report = await report_repo.get(report_id)
@@ -127,6 +131,7 @@ async def get_report(
 async def approve_report(
     request: ReportApprovalRequest,
     report_repo: BaseReportRepository = Depends(get_report_repository),
+    _current_user: User = Depends(get_current_user),
 ) -> ReportApprovalResponse:
     """Doctor approves, edits, or rejects an AI report.
 
