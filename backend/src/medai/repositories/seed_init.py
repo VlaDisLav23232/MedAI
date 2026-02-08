@@ -38,10 +38,17 @@ async def seed_initial_data() -> None:
                     seeded_count += 1
             logger.info("seeded_demo_patients", count=seeded_count, total=len(demo_patients))
 
-            # Skip timeline events for now (repository method TBD)
-            # timeline_repo = SqlAlchemyTimelineRepository(session)
-            # events = create_seed_timeline_events()
-            # ...
+            # Seed timeline events
+            timeline_repo = SqlAlchemyTimelineRepository(session)
+            events = create_seed_timeline_events()
+            event_seeded_count = 0
+            for event in events:
+                # Check if event already exists
+                existing_events = await timeline_repo.get_for_patient(event.patient_id)
+                if not any(e.id == event.id for e in existing_events):
+                    await timeline_repo.add_event(event)
+                    event_seeded_count += 1
+            logger.info("seeded_timeline_events", count=event_seeded_count, total=len(events))
 
             await session.commit()
             logger.info("seed_data_complete")
