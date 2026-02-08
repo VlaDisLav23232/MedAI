@@ -54,6 +54,27 @@ function ToolResultItem({ result }: { result: ToolResult }) {
   );
 }
 
+/** Safely render inline markdown (bold, emoji) without dangerouslySetInnerHTML */
+function renderInline(text: string, isUser: boolean): React.ReactNode {
+  // Split on **bold** markers
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong key={i} className="font-semibold">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    // Highlight certain emoji
+    return part.split(/(✅|↑)/g).map((seg, j) => {
+      if (seg === "✅") return <span key={`${i}-${j}`} className="text-accent-emerald">✅</span>;
+      if (seg === "↑") return <span key={`${i}-${j}`} className="text-accent-rose">↑</span>;
+      return <React.Fragment key={`${i}-${j}`}>{seg}</React.Fragment>;
+    });
+  });
+}
+
 export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -123,7 +144,7 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
             </div>
           )}
 
-          {/* Text content — render markdown-like formatting */}
+          {/* Text content — safe markdown rendering */}
           <div
             className={cn(
               "text-sm leading-relaxed whitespace-pre-wrap",
@@ -136,22 +157,17 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
             )}
           >
             {message.content.split("\n").map((line, i) => {
-              // Basic markdown rendering
               if (line.startsWith("## ")) {
-                return (
-                  <h2 key={i}>{line.replace("## ", "")}</h2>
-                );
+                return <h2 key={i}>{renderInline(line.replace("## ", ""), isUser)}</h2>;
               }
               if (line.startsWith("### ")) {
-                return (
-                  <h3 key={i}>{line.replace("### ", "")}</h3>
-                );
+                return <h3 key={i}>{renderInline(line.replace("### ", ""), isUser)}</h3>;
               }
               if (line.match(/^\d+\.\s/)) {
                 return (
                   <div key={i} className="ml-4 flex gap-2">
                     <span className="text-gray-400 flex-shrink-0">{line.match(/^\d+/)![0]}.</span>
-                    <span>{line.replace(/^\d+\.\s/, "")}</span>
+                    <span>{renderInline(line.replace(/^\d+\.\s/, ""), isUser)}</span>
                   </div>
                 );
               }
@@ -159,29 +175,12 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
                 return (
                   <div key={i} className="ml-4 flex gap-2">
                     <span className="text-brand-500">•</span>
-                    <span
-                      dangerouslySetInnerHTML={{
-                        __html: line
-                          .replace("- ", "")
-                          .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-                          .replace(/✅/g, '<span class="text-accent-emerald">✅</span>'),
-                      }}
-                    />
+                    <span>{renderInline(line.replace("- ", ""), isUser)}</span>
                   </div>
                 );
               }
               if (line.trim() === "") return <br key={i} />;
-              return (
-                <p
-                  key={i}
-                  dangerouslySetInnerHTML={{
-                    __html: line
-                      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-                      .replace(/✅/g, '<span class="text-accent-emerald">✅</span>')
-                      .replace(/↑/g, '<span class="text-accent-rose">↑</span>'),
-                  }}
-                />
-              );
+              return <p key={i}>{renderInline(line, isUser)}</p>;
             })}
           </div>
 
@@ -203,9 +202,12 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
         </div>
 
         {/* Timestamp */}
-        <span className="text-[10px] text-gray-400 mt-1 px-1">
+        <time
+          dateTime={message.timestamp}
+          className="text-[10px] text-gray-400 mt-1 px-1"
+        >
           {formatTime(message.timestamp)}
-        </span>
+        </time>
       </div>
     </div>
   );

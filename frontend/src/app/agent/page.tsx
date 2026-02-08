@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { CitationsSidebar } from "@/components/agent/CitationsSidebar";
 import { ChatArea } from "@/components/agent/ChatArea";
 import { ChatInput } from "@/components/agent/ChatInput";
 import { AgentStatusIndicator } from "@/components/shared/AgentStatusIndicator";
+import { apiClient } from "@/lib/api/client";
 import { mockChatMessages, mockCitations, mockPatient } from "@/lib/mock-data";
 import type { ChatMessage, AgentStatus, Citation } from "@/lib/types";
 import {
@@ -14,6 +15,8 @@ import {
   User,
   Activity,
   Settings,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 export default function AgentPage() {
@@ -21,50 +24,74 @@ export default function AgentPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle");
   const [citations, setCitations] = useState<Citation[]>([]);
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
-  const handleSend = useCallback((text: string) => {
-    // Add user message
-    const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      role: "user",
-      content: text,
-      timestamp: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setAgentStatus("routing");
-
-    // Simulate agent processing pipeline
-    setTimeout(() => {
-      setAgentStatus("analyzing_image");
-    }, 800);
-
-    setTimeout(() => {
-      setAgentStatus("searching_history");
-    }, 2000);
-
-    setTimeout(() => {
-      setAgentStatus("analyzing_text");
-    }, 3500);
-
-    setTimeout(() => {
-      setAgentStatus("judging");
-    }, 5000);
-
-    setTimeout(() => {
-      setAgentStatus("generating_report");
-    }, 6000);
-
-    // Add mock agent responses after delay
-    setTimeout(() => {
-      setCitations(mockCitations);
-      setMessages((prev) => [...prev, mockChatMessages[1], mockChatMessages[2]]);
-      setAgentStatus("complete");
-    }, 7000);
-
-    setTimeout(() => {
-      setAgentStatus("idle");
-    }, 9000);
+  // Check backend availability on mount
+  useEffect(() => {
+    apiClient.isBackendAvailable().then(setBackendOnline);
   }, []);
+
+  const handleSend = useCallback(
+    async (text: string, _attachments?: File[]) => {
+      // Add user message
+      const userMsg: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        role: "user",
+        content: text,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      setAgentStatus("routing");
+
+      // Attempt real API call
+      if (backendOnline) {
+        try {
+          setAgentStatus("analyzing_text");
+          const res = await apiClient.analyzeCase({
+            patient_id: mockPatient.id,
+            doctor_query: text,
+          });
+          setAgentStatus("complete");
+
+          const agentMsg: ChatMessage = {
+            id: `msg-${Date.now() + 1}`,
+            role: "agent",
+            content: `**Diagnosis:** ${res.diagnosis} (${Math.round(res.confidence * 100)}% confidence)\n\n${res.evidence_summary}\n\n**Plan:**\n${res.plan.map((p) => `- ${p}`).join("\n")}`,
+            timestamp: new Date().toISOString(),
+            citations: res.findings.map((f, i) => ({
+              id: `cit-${i}`,
+              type: "finding" as const,
+              title: f.finding,
+              content: f.explanation,
+              source: "AI Analysis",
+              confidence: f.confidence,
+            })),
+          };
+
+          setCitations(agentMsg.citations ?? []);
+          setMessages((prev) => [...prev, agentMsg]);
+          setTimeout(() => setAgentStatus("idle"), 2000);
+          return;
+        } catch {
+          // Fall through to mock on error
+        }
+      }
+
+      // Mock fallback simulation
+      setTimeout(() => setAgentStatus("analyzing_image"), 800);
+      setTimeout(() => setAgentStatus("searching_history"), 2000);
+      setTimeout(() => setAgentStatus("analyzing_text"), 3500);
+      setTimeout(() => setAgentStatus("judging"), 5000);
+      setTimeout(() => setAgentStatus("generating_report"), 6000);
+      setTimeout(() => {
+        setCitations(mockCitations);
+        setMessages((prev) => [...prev, mockChatMessages[1], mockChatMessages[2]]);
+        setAgentStatus("complete");
+      }, 7000);
+      setTimeout(() => setAgentStatus("idle"), 9000);
+    },
+    [backendOnline]
+  );
 
   const handleLoadDemo = useCallback(() => {
     setMessages(mockChatMessages);
@@ -127,6 +154,21 @@ export default function AgentPage() {
           <div className="flex items-center gap-3">
             <AgentStatusIndicator status={agentStatus} />
 
+            {backendOnline !== null && (
+              <div
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium",
+                  backendOnline
+                    ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
+                    : "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
+                )}
+                title={backendOnline ? "Connected to backend" : "Using mock data"}
+              >
+                {backendOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
+                {backendOnline ? "Live" : "Mock"}
+              </div>
+            )}
+
             <div className="h-5 w-px bg-gray-200 dark:bg-gray-700" />
 
             <button
@@ -137,7 +179,7 @@ export default function AgentPage() {
               Load Demo
             </button>
 
-            <button className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-surface-dark-3 transition text-gray-400">
+            <button className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-surface-dark-3 transition text-gray-400" aria-label="Settings (coming soon)" title="Settings — coming soon" disabled>
               <Settings size={16} />
             </button>
           </div>
@@ -149,6 +191,7 @@ export default function AgentPage() {
           onCitationClick={(id) => {
             setSidebarOpen(true);
           }}
+          onPromptClick={(prompt) => handleSend(prompt)}
           className="flex-1"
         />
 

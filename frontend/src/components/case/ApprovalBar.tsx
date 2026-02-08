@@ -8,15 +8,17 @@ import {
   XCircle,
   MessageSquare,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 
 type Verdict = "pending" | "approved" | "rejected" | "edited";
 
 interface ApprovalBarProps {
   status: Verdict;
-  onApprove: () => void;
-  onReject: () => void;
-  onEdit: () => void;
+  onApprove: (notes?: string) => void;
+  onReject: (notes?: string) => void;
+  onEdit: (notes?: string) => void;
+  loading?: boolean;
   className?: string;
 }
 
@@ -25,6 +27,7 @@ export function ApprovalBar({
   onApprove,
   onReject,
   onEdit,
+  loading = false,
   className,
 }: ApprovalBarProps) {
   const [notes, setNotes] = useState("");
@@ -98,7 +101,9 @@ export function ApprovalBar({
       {/* Notes */}
       {showNotes && (
         <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-surface-dark-3">
+          <label htmlFor="approval-notes" className="sr-only">Clinical notes or corrections</label>
           <textarea
+            id="approval-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Add clinical notes or corrections..."
@@ -112,24 +117,27 @@ export function ApprovalBar({
       {status === "pending" && (
         <div className="flex items-center justify-end gap-3 px-4 py-3">
           <button
-            onClick={onReject}
-            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/10 text-rose-600 dark:text-rose-400 text-sm font-medium hover:bg-rose-100 dark:hover:bg-rose-900/20 transition active:scale-[0.98]"
+            onClick={() => onReject(notes || undefined)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/10 text-rose-600 dark:text-rose-400 text-sm font-medium hover:bg-rose-100 dark:hover:bg-rose-900/20 transition active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
           >
-            <XCircle size={16} />
+            {loading ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
             Reject
           </button>
           <button
-            onClick={onEdit}
-            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/10 text-brand-600 dark:text-brand-400 text-sm font-medium hover:bg-brand-100 dark:hover:bg-brand-900/20 transition active:scale-[0.98]"
+            onClick={() => onEdit(notes || undefined)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/10 text-brand-600 dark:text-brand-400 text-sm font-medium hover:bg-brand-100 dark:hover:bg-brand-900/20 transition active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
           >
-            <Edit3 size={16} />
+            {loading ? <Loader2 size={16} className="animate-spin" /> : <Edit3 size={16} />}
             Edit & Approve
           </button>
           <button
-            onClick={onApprove}
-            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-accent-emerald text-white text-sm font-medium hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/25 active:scale-[0.98]"
+            onClick={() => onApprove(notes || undefined)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-accent-emerald text-white text-sm font-medium hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/25 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
           >
-            <CheckCircle2 size={16} />
+            {loading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
             Approve
           </button>
         </div>

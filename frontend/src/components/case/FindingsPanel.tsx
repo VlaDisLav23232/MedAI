@@ -21,16 +21,16 @@ export function FindingsPanel({
   className,
 }: FindingsPanelProps) {
   return (
-    <div className={cn("space-y-4", className)}>
+    <div className={cn("space-y-4", className)} role="region" aria-label="AI findings">
       {/* Findings */}
       <div>
         <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-2">
-          <Target size={12} />
+          <Target size={12} aria-hidden="true" />
           Findings
         </h3>
-        <div className="space-y-3">
+        <ul className="space-y-3 list-none m-0 p-0" aria-label="Finding list">
           {findings.map((finding, i) => (
-            <div
+            <li
               key={i}
               className="p-4 rounded-xl bg-white dark:bg-surface-dark-2 border border-gray-100 dark:border-gray-800 neo-shadow hover:neo-shadow-lg transition-all duration-200"
             >
@@ -51,9 +51,9 @@ export function FindingsPanel({
                   <span>Region: [{finding.region_bbox.join(", ")}]</span>
                 </div>
               )}
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
 
       {/* Differential diagnoses */}

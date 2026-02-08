@@ -117,14 +117,18 @@ export function ChatInput({ onSend, disabled, className }: ChatInputProps) {
           <button
             onClick={() => setShowAttachMenu(!showAttachMenu)}
             className="p-2 rounded-xl text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition"
+            aria-label="Attach file"
+            aria-expanded={showAttachMenu}
+            aria-haspopup="menu"
           >
             <Paperclip size={18} />
           </button>
 
           {showAttachMenu && (
-            <div className="absolute bottom-full left-0 mb-2 py-2 w-48 bg-white dark:bg-surface-dark-2 rounded-xl border border-gray-200 dark:border-gray-700 neo-shadow-lg z-50">
+            <div role="menu" className="absolute bottom-full left-0 mb-2 py-2 w-48 bg-white dark:bg-surface-dark-2 rounded-xl border border-gray-200 dark:border-gray-700 neo-shadow-lg z-50">
               <button
                 onClick={() => handleFileSelect("image/*")}
+                role="menuitem"
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-surface-dark-3 transition"
               >
                 <ImageIcon size={16} className="text-accent-cyan" />
@@ -132,6 +136,7 @@ export function ChatInput({ onSend, disabled, className }: ChatInputProps) {
               </button>
               <button
                 onClick={() => handleFileSelect("audio/*")}
+                role="menuitem"
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-surface-dark-3 transition"
               >
                 <AudioLines size={16} className="text-accent-amber" />
@@ -139,6 +144,7 @@ export function ChatInput({ onSend, disabled, className }: ChatInputProps) {
               </button>
               <button
                 onClick={() => handleFileSelect(".pdf,.txt,.doc,.docx")}
+                role="menuitem"
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-surface-dark-3 transition"
               >
                 <FileText size={16} className="text-accent-violet" />
@@ -149,7 +155,9 @@ export function ChatInput({ onSend, disabled, className }: ChatInputProps) {
         </div>
 
         {/* Textarea */}
+        <label htmlFor="chat-input" className="sr-only">Clinical case description</label>
         <textarea
+          id="chat-input"
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -167,7 +175,12 @@ export function ChatInput({ onSend, disabled, className }: ChatInputProps) {
         />
 
         {/* Voice button */}
-        <button className="p-2 rounded-xl text-gray-400 hover:text-accent-amber hover:bg-amber-50 dark:hover:bg-amber-900/20 transition">
+        <button
+          className="p-2 rounded-xl text-gray-400 hover:text-accent-amber hover:bg-amber-50 dark:hover:bg-amber-900/20 transition opacity-50 cursor-not-allowed"
+          disabled
+          aria-label="Voice input (coming soon)"
+          title="Voice input — coming soon"
+        >
           <Mic size={18} />
         </button>
 
@@ -175,6 +188,7 @@ export function ChatInput({ onSend, disabled, className }: ChatInputProps) {
         <button
           onClick={handleSend}
           disabled={disabled || (!text.trim() && files.length === 0)}
+          aria-label="Send message"
           className={cn(
             "p-2.5 rounded-xl transition-all duration-200",
             text.trim() || files.length > 0
@@ -192,6 +206,7 @@ export function ChatInput({ onSend, disabled, className }: ChatInputProps) {
         type="file"
         className="hidden"
         onChange={handleFileChange}
+        aria-label="Upload file"
         multiple
       />
     </div>
