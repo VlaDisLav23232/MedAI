@@ -11,6 +11,7 @@ from functools import lru_cache
 from anthropic import AsyncAnthropic
 
 from medai.config import Settings, get_settings
+from medai.domain.entities import ToolName
 from medai.domain.interfaces import (
     BaseJudge,
     BaseOrchestrator,
@@ -28,6 +29,7 @@ from medai.services.judge import ClaudeJudge, MockJudge
 from medai.services.orchestrator import ClaudeOrchestrator, MockOrchestrator
 from medai.services.tool_registry import ToolRegistry
 from medai.tools.http import register_http_tools
+from medai.tools.local import LocalHistorySearchTool
 from medai.tools.mock import register_mock_tools
 
 
@@ -37,6 +39,7 @@ def get_tool_registry() -> ToolRegistry:
 
     DEBUG=true  → mock tools (no GPU needed)
     DEBUG=false → HTTP tools calling real model endpoints
+                  + LocalHistorySearchTool (in-memory timeline search)
     """
     settings = get_settings()
     registry = ToolRegistry()
@@ -45,6 +48,10 @@ def get_tool_registry() -> ToolRegistry:
         tools = register_mock_tools()
     else:
         tools = register_http_tools(settings)
+        # Override history_search with local in-memory implementation
+        # (no external RAG endpoint needed for the hackathon prototype)
+        timeline_repo = get_timeline_repository()
+        tools[ToolName.HISTORY_SEARCH] = LocalHistorySearchTool(timeline_repo)
 
     for tool in tools.values():
         registry.register(tool)
@@ -66,9 +73,8 @@ def get_patient_repository() -> BasePatientRepository:
     TODO: Swap for SQLAlchemy repo when DB is ready.
     """
     repo = InMemoryPatientRepository()
-    settings = get_settings()
-    if settings.debug:
-        repo.seed(create_seed_patients())
+    # Always seed demo patients (useful for demos + testing)
+    repo.seed(create_seed_patients())
     return repo
 
 
@@ -76,9 +82,8 @@ def get_patient_repository() -> BasePatientRepository:
 def get_timeline_repository() -> BaseTimelineRepository:
     """Create the timeline repository (singleton)."""
     repo = InMemoryTimelineRepository()
-    settings = get_settings()
-    if settings.debug:
-        repo.seed(create_seed_timeline_events())
+    # Always seed demo timeline events
+    repo.seed(create_seed_timeline_events())
     return repo
 
 

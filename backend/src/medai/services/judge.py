@@ -50,7 +50,8 @@ Respond with a JSON object matching this exact schema:
     "requery_tools": ["tool names to re-run if verdict is conflict"]
 }}
 
-Respond ONLY with valid JSON, no markdown or explanation outside the JSON.
+CRITICAL: Respond with ONLY the raw JSON object. Do NOT wrap it in markdown
+code fences (```). Do NOT add any text before or after the JSON.
 """
 
 
@@ -99,8 +100,12 @@ class ClaudeJudge(BaseJudge):
                 messages=[{"role": "user", "content": user_message}],
             )
 
-            # Parse Claude's response
-            response_text = response.content[0].text  # type: ignore
+            # Parse Claude's response — strip markdown fences if present
+            response_text = response.content[0].text.strip()  # type: ignore
+            if response_text.startswith("```"):
+                # Remove ```json ... ``` wrapper
+                response_text = response_text.split("\n", 1)[1] if "\n" in response_text else response_text[3:]
+                response_text = response_text.rsplit("```", 1)[0].strip()
             judgment_data = json.loads(response_text)
 
             result = JudgmentResult(
@@ -140,7 +145,13 @@ class ClaudeJudge(BaseJudge):
         """Format specialist results as readable text for Claude."""
         sections = []
         for tool_name, output in results.results.items():
-            sections.append(f"### {tool_name}\n```json\n{output.model_dump_json(indent=2)}\n```")
+            if tool_name.startswith("_"):
+                # Internal entries like _synthesis are plain strings
+                sections.append(f"### {tool_name}\n{output}")
+            elif hasattr(output, "model_dump_json"):
+                sections.append(f"### {tool_name}\n```json\n{output.model_dump_json(indent=2)}\n```")
+            else:
+                sections.append(f"### {tool_name}\n{output}")
         for tool_name, error in results.errors.items():
             sections.append(f"### {tool_name} (ERROR)\n{error}")
         return "\n\n".join(sections)
