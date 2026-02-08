@@ -57,8 +57,8 @@ export function Hero() {
             Launch Co-Pilot
             <ArrowRight size={16} />
           </Link>
-          <Link href="/case/demo" className="btn-secondary flex items-center gap-2 text-base px-8 py-3.5">
-            View Demo Case
+          <Link href="/patients" className="btn-secondary flex items-center gap-2 text-base px-8 py-3.5">
+            View Patients
           </Link>
         </div>
 

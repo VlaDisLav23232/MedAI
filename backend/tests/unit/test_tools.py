@@ -61,7 +61,8 @@ class TestToolRegistry:
         assert ToolName.TEXT_REASONING in listed
         assert ToolName.AUDIO_ANALYSIS in listed
         assert ToolName.HISTORY_SEARCH in listed
-        assert len(listed) == 4
+        assert ToolName.IMAGE_EXPLAINABILITY in listed
+        assert len(listed) == 5
 
     def test_len(self):
         registry = ToolRegistry()

@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { cn, formatDate } from "@/lib/utils";
 import { SeverityBadge } from "@/components/shared/SeverityBadge";
-import { mockPatient, mockTimelineEvents } from "@/lib/mock-data";
+import { LoadingAnimation } from "@/components/shared/LoadingAnimation";
+import { useTimeline, usePatient } from "@/lib/hooks";
+import { mapApiTimelineEvent, mapApiPatient } from "@/lib/api/mappers";
 import type { TimelineEvent } from "@/lib/types";
 import {
   ArrowLeft,
@@ -18,10 +20,15 @@ import {
   Activity,
   Filter,
   ChevronRight,
+  ChevronDown,
+  AlertCircle,
+  FileText,
 } from "lucide-react";
 
+// ─── Event Type Config ───────────────────────────────────
+
 const eventTypeConfig: Record<
-  TimelineEvent["event_type"],
+  string,
   { icon: React.ElementType; color: string; bg: string; label: string }
 > = {
   imaging: {
@@ -60,12 +67,85 @@ const eventTypeConfig: Record<
     bg: "bg-accent-rose/10 border-accent-rose/20",
     label: "Medication",
   },
+  note: {
+    icon: FileText,
+    color: "text-gray-500",
+    bg: "bg-gray-100 border-gray-200 dark:bg-gray-800 dark:border-gray-700",
+    label: "Note",
+  },
+  audio: {
+    icon: Activity,
+    color: "text-accent-amber",
+    bg: "bg-accent-amber/10 border-accent-amber/20",
+    label: "Audio",
+  },
 };
+
+const defaultEventConfig = eventTypeConfig.encounter;
 
 type FilterType = "all" | TimelineEvent["event_type"];
 
-export default function TimelinePage() {
+// ─── Helpers ─────────────────────────────────────────────
+
+function normalizeEventType(apiType: string): TimelineEvent["event_type"] {
+  const known: TimelineEvent["event_type"][] = [
+    "imaging",
+    "lab",
+    "encounter",
+    "ai_report",
+    "procedure",
+    "medication",
+    "note",
+    "audio",
+  ];
+  if (known.includes(apiType as TimelineEvent["event_type"])) {
+    return apiType as TimelineEvent["event_type"];
+  }
+  return "encounter";
+}
+
+// ─── Page Component ──────────────────────────────────────
+
+export default function TimelinePage({
+  params,
+}: {
+  params: { patientId: string };
+}) {
+  const { patientId } = params;
   const [filter, setFilter] = useState<FilterType>("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // React Query — fetches from API, falls back to mock on error
+  const timelineQuery = useTimeline(patientId);
+  const patientQuery = usePatient(patientId);
+
+  const loading = timelineQuery.isLoading || patientQuery.isLoading;
+
+  // Map API data to frontend types
+  const events: TimelineEvent[] = useMemo(() => {
+    if (timelineQuery.data) {
+      return timelineQuery.data.events.map((e) => {
+        const mapped = mapApiTimelineEvent(e);
+        return {
+          ...mapped,
+          patient_id: timelineQuery.data!.patient_id,
+          event_type: normalizeEventType(mapped.event_type),
+          source_id: (e.metadata?.source_id as string) || e.id,
+          severity: (e.metadata?.severity as TimelineEvent["severity"]) || undefined,
+        };
+      });
+    }
+    return [];
+  }, [timelineQuery.data]);
+
+  const patient = useMemo(() => {
+    if (patientQuery.data) {
+      return mapApiPatient(patientQuery.data);
+    }
+    return null;
+  }, [patientQuery.data]);
+
+  // ── Filtering & Grouping ───────────────────────────────
 
   const allTypes: FilterType[] = [
     "all",
@@ -73,44 +153,80 @@ export default function TimelinePage() {
     "lab",
     "encounter",
     "ai_report",
+    "note",
     "medication",
     "procedure",
   ];
 
-  const filteredEvents =
-    filter === "all"
-      ? mockTimelineEvents
-      : mockTimelineEvents.filter((e) => e.event_type === filter);
-
-  // Group by year
-  const groupedByYear = filteredEvents.reduce(
-    (acc, event) => {
-      const year = new Date(event.date).getFullYear().toString();
-      if (!acc[year]) acc[year] = [];
-      acc[year].push(event);
-      return acc;
-    },
-    {} as Record<string, TimelineEvent[]>
+  const filteredEvents = useMemo(
+    () =>
+      filter === "all"
+        ? events
+        : events.filter((e) => e.event_type === filter),
+    [events, filter]
   );
 
-  const sortedYears = Object.keys(groupedByYear).sort((a, b) => Number(b) - Number(a));
+  const groupedByYear = useMemo(() => {
+    return filteredEvents.reduce(
+      (acc, event) => {
+        const year = new Date(event.date).getFullYear().toString();
+        if (!acc[year]) acc[year] = [];
+        acc[year].push(event);
+        return acc;
+      },
+      {} as Record<string, TimelineEvent[]>
+    );
+  }, [filteredEvents]);
+
+  const sortedYears = useMemo(
+    () => Object.keys(groupedByYear).sort((a, b) => Number(b) - Number(a)),
+    [groupedByYear]
+  );
+
+  // ── Loading State ──────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="min-h-screen pt-16 bg-gray-50 dark:bg-surface-dark flex items-center justify-center">
+        <div className="text-center">
+          <LoadingAnimation
+            label="Loading patient timeline…"
+            variant="orbital"
+          />
+          <p className="text-xs text-gray-400 mt-3">
+            Fetching longitudinal health records
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render ─────────────────────────────────────────────
 
   return (
     <div className="min-h-screen pt-16 bg-gray-50 dark:bg-surface-dark">
-      {/* Header */}
-      <div className="bg-white dark:bg-surface-dark-2 border-b border-gray-200 dark:border-gray-800">
+      {/* ── Header ─────────────────────────────────── */}
+      <header className="bg-white dark:bg-surface-dark-2 border-b border-gray-200 dark:border-gray-800">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center gap-4 mb-4">
             <Link
               href="/agent"
               className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-surface-dark-3 transition"
+              aria-label="Back to co-pilot"
             >
               <ArrowLeft size={18} className="text-gray-400" />
             </Link>
-            <div className="h-5 w-px bg-gray-200 dark:bg-gray-700" />
+            <div
+              className="h-5 w-px bg-gray-200 dark:bg-gray-700"
+              aria-hidden="true"
+            />
             <div>
               <h1 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Calendar size={20} className="text-brand-500" />
+                <Calendar
+                  size={20}
+                  className="text-brand-500"
+                  aria-hidden="true"
+                />
                 Patient Timeline
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
@@ -119,43 +235,81 @@ export default function TimelinePage() {
             </div>
           </div>
 
-          {/* Patient info */}
+          {/* Patient info card */}
           <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-surface-dark-3 border border-gray-100 dark:border-gray-800">
-            <div className="w-10 h-10 rounded-xl bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
-              <User size={18} className="text-brand-600 dark:text-brand-400" />
+            <div
+              className="w-10 h-10 rounded-xl bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center"
+              aria-hidden="true"
+            >
+              <User
+                size={18}
+                className="text-brand-600 dark:text-brand-400"
+              />
             </div>
             <div>
               <span className="text-sm font-semibold text-gray-900 dark:text-white block">
-                {mockPatient.name}
+                {patient?.name ?? "Loading…"}
               </span>
               <span className="text-xs text-gray-400">
-                {mockPatient.medical_record_number} · DOB: {formatDate(mockPatient.dob)} ·{" "}
-                {mockPatient.gender}
+                {patient?.medical_record_number ?? ""} · DOB:{" "}
+                <time dateTime={patient?.dob ?? ""}>{patient?.dob ? formatDate(patient.dob) : "—"}</time>{" "}
+                · {patient?.gender ?? ""}
               </span>
             </div>
-            <div className="ml-auto text-xs text-gray-400">
-              {mockTimelineEvents.length} events recorded
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-xs text-gray-400">
+                {events.length} event
+                {events.length !== 1 ? "s" : ""} recorded
+              </span>
+
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Filter bar */}
-      <div className="sticky top-16 z-20 bg-white/80 dark:bg-surface-dark/80 backdrop-blur-lg border-b border-gray-200 dark:border-gray-800">
+      {/* ── Error banner ──────────────────────────── */}
+      {timelineQuery.error && (
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-900/10 border border-rose-200 dark:border-rose-800">
+            <AlertCircle
+              size={14}
+              className="text-accent-rose flex-shrink-0"
+            />
+            <p className="text-xs text-rose-700 dark:text-rose-400">{timelineQuery.error.message}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Filter bar ────────────────────────────── */}
+      <nav
+        className="sticky top-16 z-20 bg-white/80 dark:bg-surface-dark/80 backdrop-blur-lg border-b border-gray-200 dark:border-gray-800"
+        aria-label="Timeline event type filters"
+      >
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
-          <div className="flex items-center gap-2 overflow-x-auto">
-            <Filter size={14} className="text-gray-400 flex-shrink-0" />
+          <div
+            className="flex items-center gap-2 overflow-x-auto"
+            role="tablist"
+          >
+            <Filter
+              size={14}
+              className="text-gray-400 flex-shrink-0"
+              aria-hidden="true"
+            />
             {allTypes.map((type) => {
               const isAll = type === "all";
-              const config = isAll ? null : eventTypeConfig[type as TimelineEvent["event_type"]];
+              const config = isAll
+                ? null
+                : eventTypeConfig[type as TimelineEvent["event_type"]];
               const Icon = config?.icon;
               const count = isAll
-                ? mockTimelineEvents.length
-                : mockTimelineEvents.filter((e) => e.event_type === type).length;
+                ? events.length
+                : events.filter((e) => e.event_type === type).length;
 
               return (
                 <button
                   key={type}
+                  role="tab"
+                  aria-selected={filter === type}
                   onClick={() => setFilter(type)}
                   className={cn(
                     "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition",
@@ -164,7 +318,7 @@ export default function TimelinePage() {
                       : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-surface-dark-2"
                   )}
                 >
-                  {Icon && <Icon size={12} />}
+                  {Icon && <Icon size={12} aria-hidden="true" />}
                   {isAll ? "All" : config?.label}
                   <span className="text-[10px] opacity-60">({count})</span>
                 </button>
@@ -172,41 +326,56 @@ export default function TimelinePage() {
             })}
           </div>
         </div>
-      </div>
+      </nav>
 
-      {/* Timeline content */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* ── Timeline content ──────────────────────── */}
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {sortedYears.map((year) => (
-          <div key={year} className="mb-10">
-            {/* Year header */}
+          <section
+            key={year}
+            className="mb-10"
+            aria-label={`Events from ${year}`}
+          >
             <div className="flex items-center gap-3 mb-4">
-              <span className="text-2xl font-extrabold text-gray-200 dark:text-gray-800 font-mono">
+              <time
+                dateTime={year}
+                className="text-2xl font-extrabold text-gray-200 dark:text-gray-800 font-mono"
+              >
                 {year}
-              </span>
-              <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+              </time>
+              <div
+                className="flex-1 h-px bg-gray-200 dark:bg-gray-800"
+                aria-hidden="true"
+              />
               <span className="text-xs text-gray-400">
-                {groupedByYear[year].length} event(s)
+                {groupedByYear[year].length} event
+                {groupedByYear[year].length !== 1 ? "s" : ""}
               </span>
             </div>
 
-            {/* Events */}
             <div className="relative">
-              {/* Vertical line */}
-              <div className="absolute left-[23px] top-0 bottom-0 w-px bg-gray-200 dark:bg-gray-800" />
+              <div
+                className="absolute left-[23px] top-0 bottom-0 w-px bg-gray-200 dark:bg-gray-800"
+                aria-hidden="true"
+              />
 
-              <div className="space-y-4">
+              <ol className="space-y-4 list-none" role="list">
                 {groupedByYear[year].map((event, i) => {
-                  const config = eventTypeConfig[event.event_type];
+                  const config =
+                    eventTypeConfig[event.event_type] || defaultEventConfig;
                   const Icon = config.icon;
+                  const isExpanded = expandedId === event.id;
 
                   return (
-                    <div
+                    <li
                       key={event.id}
                       className="relative flex items-start gap-4 group animate-slide-up"
                       style={{ animationDelay: `${i * 0.05}s` }}
                     >
-                      {/* Dot on timeline */}
-                      <div className="relative z-10 flex-shrink-0">
+                      <div
+                        className="relative z-10 flex-shrink-0"
+                        aria-hidden="true"
+                      >
                         <div
                           className={cn(
                             "w-[46px] h-[46px] rounded-xl flex items-center justify-center border transition-all",
@@ -218,49 +387,107 @@ export default function TimelinePage() {
                         </div>
                       </div>
 
-                      {/* Event card */}
-                      <div className="flex-1 p-4 rounded-xl bg-white dark:bg-surface-dark-2 border border-gray-100 dark:border-gray-800 neo-shadow group-hover:neo-shadow-lg transition-all duration-200">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                                {config.label}
-                              </span>
-                              {event.severity && event.severity !== "normal" && (
-                                <SeverityBadge severity={event.severity} />
+                      <article
+                        className={cn(
+                          "flex-1 rounded-xl bg-white dark:bg-surface-dark-2 border border-gray-100 dark:border-gray-800 neo-shadow transition-all duration-200",
+                          isExpanded
+                            ? "neo-shadow-lg ring-1 ring-brand-500/10"
+                            : "group-hover:neo-shadow-lg"
+                        )}
+                      >
+                        <button
+                          onClick={() =>
+                            setExpandedId(isExpanded ? null : event.id)
+                          }
+                          className="w-full p-4 text-left"
+                          aria-expanded={isExpanded}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                                  {config.label}
+                                </span>
+                                {event.severity &&
+                                  event.severity !== "normal" && (
+                                    <SeverityBadge severity={event.severity} />
+                                  )}
+                              </div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                {event.summary}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <time
+                                dateTime={event.date}
+                                className="text-xs text-gray-400 font-mono"
+                              >
+                                {formatDate(event.date)}
+                              </time>
+                              <ChevronDown
+                                size={14}
+                                className={cn(
+                                  "text-gray-300 dark:text-gray-600 transition-transform duration-200",
+                                  isExpanded
+                                    ? "rotate-180 text-brand-500"
+                                    : ""
+                                )}
+                              />
+                            </div>
+                          </div>
+                        </button>
+
+                        {/* Expanded details */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 pt-0 border-t border-gray-100 dark:border-gray-800 animate-fade-in">
+                            <div className="mt-3 space-y-2">
+                              <div className="flex items-center gap-4 text-xs text-gray-500">
+                                <span>
+                                  Source:{" "}
+                                  <span className="font-mono text-gray-400">
+                                    {event.source_type}
+                                  </span>
+                                </span>
+                                <span>
+                                  ID:{" "}
+                                  <span className="font-mono text-gray-400">
+                                    {event.source_id}
+                                  </span>
+                                </span>
+                              </div>
+                              {(event.event_type === "ai_report" || (event.event_type === "note" && event.source_type === "approval")) && (
+                                <Link
+                                  href={`/case/${event.source_id}`}
+                                  className="inline-flex items-center gap-1 text-xs text-brand-500 hover:text-brand-600 font-medium mt-2"
+                                >
+                                  {event.event_type === "ai_report" ? "View Full AI Report" : "View Approved Report"}
+                                  <ChevronRight size={12} />
+                                </Link>
                               )}
                             </div>
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">
-                              {event.summary}
-                            </p>
                           </div>
-
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <span className="text-xs text-gray-400 font-mono">
-                              {formatDate(event.date)}
-                            </span>
-                            <ChevronRight
-                              size={14}
-                              className="text-gray-300 dark:text-gray-600 group-hover:text-brand-500 transition"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                        )}
+                      </article>
+                    </li>
                   );
                 })}
-              </div>
+              </ol>
             </div>
-          </div>
+          </section>
         ))}
 
         {filteredEvents.length === 0 && (
-          <div className="text-center py-16 text-gray-400">
-            <Calendar size={40} className="mx-auto mb-3 opacity-40" />
+          <div className="text-center py-16 text-gray-400" role="status">
+            <Calendar
+              size={40}
+              className="mx-auto mb-3 opacity-40"
+              aria-hidden="true"
+            />
             <p className="text-sm">No events found for this filter</p>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }

@@ -123,7 +123,7 @@ class TestMockOrchestrator:
         report = await orchestrator.analyze_case(request)
 
         assert report.encounter_id == "ENC-TEST-004"
-        assert len(report.specialist_outputs) == 4  # All 4 tools
+        assert len(report.specialist_outputs) == 5  # All 5 tools
         assert len(report.plan) > 0
         assert len(report.reasoning_trace) > 0
 

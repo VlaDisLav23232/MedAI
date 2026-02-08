@@ -84,7 +84,7 @@ class TestInMemoryPatientRepository:
         repo.seed(seed_patients)
 
         patients = await repo.list_all()
-        assert len(patients) == 3
+        assert len(patients) == 4
 
         maria = await repo.get("PT-DEMO0001")
         assert maria is not None
@@ -188,13 +188,13 @@ class TestInMemoryTimelineRepository:
         repo.seed(seed_events)
 
         maria_events = await repo.get_for_patient("PT-DEMO0001")
-        assert len(maria_events) == 3
+        assert len(maria_events) == 9
 
         oleks_events = await repo.get_for_patient("PT-DEMO0002")
-        assert len(oleks_events) == 3
+        assert len(oleks_events) == 7
 
         natalia_events = await repo.get_for_patient("PT-DEMO0003")
-        assert len(natalia_events) == 2
+        assert len(natalia_events) == 7
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -306,7 +306,7 @@ class TestInMemoryReportRepository:
 class TestSeedData:
     def test_seed_patients_valid(self):
         patients = create_seed_patients()
-        assert len(patients) == 3
+        assert len(patients) == 4
         for p in patients:
             assert p.id.startswith("PT-DEMO")
             assert p.name
@@ -314,9 +314,9 @@ class TestSeedData:
 
     def test_seed_events_valid(self):
         events = create_seed_timeline_events()
-        assert len(events) == 8
+        assert len(events) == 32
         patient_ids = {e.patient_id for e in events}
-        assert patient_ids == {"PT-DEMO0001", "PT-DEMO0002", "PT-DEMO0003"}
+        assert patient_ids == {"PT-DEMO0001", "PT-DEMO0002", "PT-DEMO0003", "PT-DEMO0004"}
 
     def test_seed_events_reference_seed_patients(self):
         patients = create_seed_patients()

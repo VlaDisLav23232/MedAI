@@ -50,7 +50,7 @@ class TestHttpImageAnalysisTool:
     @pytest.mark.asyncio
     @respx.mock
     async def test_successful_image_analysis(self, tool):
-        respx.post(f"{MOCK_ENDPOINT}/predict").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -61,7 +61,6 @@ class TestHttpImageAnalysisTool:
                             "confidence": 0.92,
                             "explanation": "Dense opacity right lower zone",
                             "severity": "moderate",
-                            "region_bbox": [100, 200, 300, 400],
                         }
                     ],
                     "attention_heatmap_url": "/heatmaps/001.png",
@@ -83,20 +82,40 @@ class TestHttpImageAnalysisTool:
         assert result.findings[0].finding == "Consolidation in RLL"
         assert result.findings[0].confidence == 0.92
         assert result.findings[0].severity == Severity.MODERATE
-        assert result.findings[0].region_bbox == [100, 200, 300, 400]
+        assert result.findings[0].region_bbox is None  # No longer populated by image tool
         assert result.attention_heatmap_url == "/heatmaps/001.png"
         assert "pneumonia" in result.differential_diagnoses
 
     @pytest.mark.asyncio
     @respx.mock
     async def test_empty_findings(self, tool):
-        respx.post(f"{MOCK_ENDPOINT}/predict").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(200, json={"modality_detected": "ct", "findings": []})
         )
         result = await tool.execute(image_url="http://images/ct.png")
         assert isinstance(result, ImageAnalysisOutput)
         assert result.modality_detected == Modality.CT
         assert result.findings == []
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_modality_normalization(self, tool):
+        """Model returns 'chest x-ray' which is not a valid Modality enum value."""
+        respx.post(f"{MOCK_ENDPOINT}").mock(
+            return_value=httpx.Response(200, json={"modality_detected": "chest x-ray", "findings": []})
+        )
+        result = await tool.execute(image_url="http://images/cxr.png")
+        assert result.modality_detected == Modality.XRAY  # normalized, not crash
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_unknown_modality_falls_back(self, tool):
+        """Completely unknown modality falls back to OTHER."""
+        respx.post(f"{MOCK_ENDPOINT}").mock(
+            return_value=httpx.Response(200, json={"modality_detected": "quantum_scan_3000", "findings": []})
+        )
+        result = await tool.execute(image_url="http://images/q.png")
+        assert result.modality_detected == Modality.OTHER
 
     def test_interface_compliance(self, tool):
         assert tool.name == ToolName.IMAGE_ANALYSIS
@@ -122,7 +141,7 @@ class TestHttpTextReasoningTool:
     @pytest.mark.asyncio
     @respx.mock
     async def test_successful_text_reasoning(self, tool):
-        respx.post(f"{MOCK_ENDPOINT}/predict").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -170,7 +189,7 @@ class TestHttpAudioAnalysisTool:
     @pytest.mark.asyncio
     @respx.mock
     async def test_successful_audio_analysis(self, tool):
-        respx.post(f"{MOCK_ENDPOINT}/predict").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -215,7 +234,7 @@ class TestHttpHistorySearchTool:
     @pytest.mark.asyncio
     @respx.mock
     async def test_successful_history_search(self, tool):
-        respx.post(f"{MOCK_ENDPOINT}/search").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -242,7 +261,7 @@ class TestHttpHistorySearchTool:
         assert result.timeline_context == "No prior respiratory issues noted"
 
     def test_uses_search_path(self, tool):
-        assert tool._get_path() == "/search"
+        assert tool._get_path() == "/search"  # HttpHistorySearchTool still overrides (unused in prod)
 
     def test_interface_compliance(self, tool):
         assert tool.name == ToolName.HISTORY_SEARCH
@@ -265,7 +284,7 @@ class TestHttpToolResilience:
     @respx.mock
     async def test_retry_on_server_error(self, tool):
         """500 on first try → success on second try."""
-        route = respx.post(f"{MOCK_ENDPOINT}/predict")
+        route = respx.post(f"{MOCK_ENDPOINT}")
         route.side_effect = [
             httpx.Response(500, json={"error": "Internal server error"}),
             httpx.Response(200, json={"modality_detected": "xray", "findings": []}),
@@ -280,7 +299,7 @@ class TestHttpToolResilience:
     async def test_no_retry_on_client_error(self):
         """400-level errors should not be retried."""
         tool = HttpImageAnalysisTool(endpoint=MOCK_ENDPOINT, max_retries=2)
-        route = respx.post(f"{MOCK_ENDPOINT}/predict")
+        route = respx.post(f"{MOCK_ENDPOINT}")
         route.mock(return_value=httpx.Response(400, json={"error": "Bad request"}))
 
         with pytest.raises(RuntimeError, match="failed after"):
@@ -292,7 +311,7 @@ class TestHttpToolResilience:
     @respx.mock
     async def test_exhausted_retries_raises(self):
         tool = HttpImageAnalysisTool(endpoint=MOCK_ENDPOINT, max_retries=1)
-        respx.post(f"{MOCK_ENDPOINT}/predict").mock(
+        respx.post(f"{MOCK_ENDPOINT}").mock(
             return_value=httpx.Response(503, json={"error": "Service unavailable"})
         )
 
@@ -314,16 +333,39 @@ class TestRegisterHttpTools:
             medgemma_4b_endpoint="http://image:8010",
             medgemma_27b_endpoint="http://text:8011",
             hear_endpoint="http://audio:8013",
+            medsiglip_endpoint="http://siglip:8012",
         )
         tools = register_http_tools(settings)
 
-        assert len(tools) == 4
+        assert len(tools) == 5
         assert ToolName.IMAGE_ANALYSIS in tools
         assert ToolName.TEXT_REASONING in tools
         assert ToolName.AUDIO_ANALYSIS in tools
         assert ToolName.HISTORY_SEARCH in tools
+        assert ToolName.IMAGE_EXPLAINABILITY in tools
 
         # Verify endpoints are correctly assigned
         assert tools[ToolName.IMAGE_ANALYSIS]._endpoint == "http://image:8010"
         assert tools[ToolName.TEXT_REASONING]._endpoint == "http://text:8011"
         assert tools[ToolName.AUDIO_ANALYSIS]._endpoint == "http://audio:8013"
+        assert tools[ToolName.IMAGE_EXPLAINABILITY]._endpoint == "http://siglip:8012"
+
+    def test_factory_without_27b(self):
+        import os
+        os.environ["ANTHROPIC_API_KEY"] = "sk-test"
+        settings = Settings(
+            anthropic_api_key="sk-test",
+            medgemma_4b_endpoint="http://image:8010",
+            medgemma_27b_endpoint="http://text:8011",
+            hear_endpoint="http://audio:8013",
+            medsiglip_endpoint="http://siglip:8012",
+            enable_27b_reasoning=False,
+        )
+        tools = register_http_tools(settings)
+
+        assert len(tools) == 4
+        assert ToolName.IMAGE_ANALYSIS in tools
+        assert ToolName.TEXT_REASONING not in tools
+        assert ToolName.AUDIO_ANALYSIS in tools
+        assert ToolName.HISTORY_SEARCH in tools
+        assert ToolName.IMAGE_EXPLAINABILITY in tools

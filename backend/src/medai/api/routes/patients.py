@@ -6,12 +6,13 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from medai.api.auth import get_current_user
 from medai.api.dependencies import (
     get_patient_repository,
     get_report_repository,
     get_timeline_repository,
 )
-from medai.domain.entities import Gender, Patient
+from medai.domain.entities import Gender, Patient, User
 from medai.domain.interfaces import (
     BasePatientRepository,
     BaseReportRepository,
@@ -23,6 +24,7 @@ from medai.domain.schemas import (
     PatientReportsResponse,
     PatientSummary,
     PatientTimelineResponse,
+    PatientUpdateRequest,
     ReportSummary,
     TimelineEventResponse,
 )
@@ -48,6 +50,7 @@ def _patient_to_summary(p: Patient) -> PatientSummary:
 @router.get("", response_model=PatientListResponse)
 async def list_patients(
     repo: BasePatientRepository = Depends(get_patient_repository),
+    _current_user: User = Depends(get_current_user),
 ) -> PatientListResponse:
     """List all patients."""
     patients = await repo.list_all()
@@ -59,6 +62,7 @@ async def list_patients(
 async def create_patient(
     body: PatientCreateRequest,
     repo: BasePatientRepository = Depends(get_patient_repository),
+    _current_user: User = Depends(get_current_user),
 ) -> PatientSummary:
     """Create a new patient record."""
     patient = Patient(
@@ -75,6 +79,7 @@ async def create_patient(
 async def get_patient(
     patient_id: str,
     repo: BasePatientRepository = Depends(get_patient_repository),
+    _current_user: User = Depends(get_current_user),
 ) -> PatientSummary:
     """Get a single patient by ID."""
     patient = await repo.get(patient_id)
@@ -83,11 +88,29 @@ async def get_patient(
     return _patient_to_summary(patient)
 
 
+@router.put("/{patient_id}", response_model=PatientSummary)
+async def update_patient(
+    patient_id: str,
+    body: PatientUpdateRequest,
+    repo: BasePatientRepository = Depends(get_patient_repository),
+    _current_user: User = Depends(get_current_user),
+) -> PatientSummary:
+    """Update an existing patient's details (partial update)."""
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    updated = await repo.update(patient_id, **fields)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+    return _patient_to_summary(updated)
+
+
 @router.get("/{patient_id}/timeline", response_model=PatientTimelineResponse)
 async def get_patient_timeline(
     patient_id: str,
     patient_repo: BasePatientRepository = Depends(get_patient_repository),
     timeline_repo: BaseTimelineRepository = Depends(get_timeline_repository),
+    _current_user: User = Depends(get_current_user),
 ) -> PatientTimelineResponse:
     """Get the full timeline for a patient (newest first)."""
     # Verify patient exists
@@ -119,6 +142,7 @@ async def get_patient_reports(
     patient_id: str,
     patient_repo: BasePatientRepository = Depends(get_patient_repository),
     report_repo: BaseReportRepository = Depends(get_report_repository),
+    _current_user: User = Depends(get_current_user),
 ) -> PatientReportsResponse:
     """Get all AI reports for a patient."""
     patient = await patient_repo.get(patient_id)

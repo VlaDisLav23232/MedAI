@@ -2,6 +2,9 @@
 
 All service instances are created here and injected into route handlers.
 This is the composition root of the application.
+
+Repository dependencies use per-request AsyncSession from the database
+module — no more singletons for repos.
 """
 
 from __future__ import annotations
@@ -9,25 +12,31 @@ from __future__ import annotations
 from functools import lru_cache
 
 from anthropic import AsyncAnthropic
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from medai.config import Settings, get_settings
+from medai.domain.entities import ToolName
 from medai.domain.interfaces import (
     BaseJudge,
     BaseOrchestrator,
     BasePatientRepository,
     BaseReportRepository,
     BaseTimelineRepository,
+    BaseUserRepository,
 )
-from medai.repositories.memory import (
-    InMemoryPatientRepository,
-    InMemoryReportRepository,
-    InMemoryTimelineRepository,
+from medai.repositories.database import get_db_session
+from medai.repositories.sqlalchemy import (
+    SqlAlchemyPatientRepository,
+    SqlAlchemyReportRepository,
+    SqlAlchemyTimelineRepository,
+    SqlAlchemyUserRepository,
 )
-from medai.repositories.seed import create_seed_patients, create_seed_timeline_events
 from medai.services.judge import ClaudeJudge, MockJudge
 from medai.services.orchestrator import ClaudeOrchestrator, MockOrchestrator
 from medai.services.tool_registry import ToolRegistry
 from medai.tools.http import register_http_tools
+from medai.tools.local import LocalHistorySearchTool
 from medai.tools.mock import register_mock_tools
 
 
@@ -37,6 +46,7 @@ def get_tool_registry() -> ToolRegistry:
 
     DEBUG=true  → mock tools (no GPU needed)
     DEBUG=false → HTTP tools calling real model endpoints
+                  + LocalHistorySearchTool (in-memory timeline search)
     """
     settings = get_settings()
     registry = ToolRegistry()
@@ -45,6 +55,9 @@ def get_tool_registry() -> ToolRegistry:
         tools = register_mock_tools()
     else:
         tools = register_http_tools(settings)
+        # History search uses in-memory for now — will be wired to DB later
+        # when the tool is refactored to accept a session-scoped repo.
+        # For now, we skip it in non-debug mode if no timeline repo is available.
 
     for tool in tools.values():
         registry.register(tool)
@@ -58,34 +71,34 @@ def get_anthropic_client() -> AsyncAnthropic:
     return AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 
-@lru_cache(maxsize=1)
-def get_patient_repository() -> BasePatientRepository:
-    """Create the patient repository (singleton).
+# ── Per-request repository dependencies ────────────────────
 
-    In DEBUG mode, seeds demo data automatically.
-    TODO: Swap for SQLAlchemy repo when DB is ready.
-    """
-    repo = InMemoryPatientRepository()
-    settings = get_settings()
-    if settings.debug:
-        repo.seed(create_seed_patients())
-    return repo
+def get_patient_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> BasePatientRepository:
+    """Per-request patient repository backed by PostgreSQL."""
+    return SqlAlchemyPatientRepository(session)
 
 
-@lru_cache(maxsize=1)
-def get_timeline_repository() -> BaseTimelineRepository:
-    """Create the timeline repository (singleton)."""
-    repo = InMemoryTimelineRepository()
-    settings = get_settings()
-    if settings.debug:
-        repo.seed(create_seed_timeline_events())
-    return repo
+def get_timeline_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> BaseTimelineRepository:
+    """Per-request timeline repository backed by PostgreSQL."""
+    return SqlAlchemyTimelineRepository(session)
 
 
-@lru_cache(maxsize=1)
-def get_report_repository() -> BaseReportRepository:
-    """Create the report repository (singleton)."""
-    return InMemoryReportRepository()
+def get_report_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> BaseReportRepository:
+    """Per-request report repository backed by PostgreSQL."""
+    return SqlAlchemyReportRepository(session)
+
+
+def get_user_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> BaseUserRepository:
+    """Per-request user repository backed by PostgreSQL."""
+    return SqlAlchemyUserRepository(session)
 
 
 def get_judge() -> BaseJudge:

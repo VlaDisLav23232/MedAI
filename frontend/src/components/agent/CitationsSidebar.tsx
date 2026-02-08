@@ -106,26 +106,30 @@ export function CitationsSidebar({
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200 dark:border-gray-800 px-2 pt-2">
+      <div className="flex overflow-x-auto border-b border-gray-200 dark:border-gray-800 px-2 pt-2" role="tablist" aria-label="Evidence categories">
         {tabConfig.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
+            role="tab"
+            aria-selected={activeTab === id}
+            aria-controls={`panel-${id}`}
+            title={label}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg transition-all",
+              "flex items-center gap-1.5 flex-1 min-w-0 justify-center px-2 py-2 text-xs font-medium rounded-t-lg transition-all",
               activeTab === id
                 ? "bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 border-b-2 border-brand-500"
                 : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
             )}
           >
-            <Icon size={13} />
-            {label}
+            <Icon size={13} className="flex-shrink-0" />
+            <span className="truncate">{label}</span>
           </button>
         ))}
       </div>
 
       {/* Citation list */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+      <div id={`panel-${activeTab}`} role="tabpanel" aria-label={`${activeTab} list`} className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
         {filteredCitations.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-600">
             <BookOpen size={32} className="mb-2 opacity-50" />
@@ -139,15 +143,17 @@ export function CitationsSidebar({
             const isExpanded = expandedId === citation.id;
 
             return (
-              <div
+              <button
+                type="button"
                 key={citation.id}
                 className={cn(
-                  "rounded-xl border transition-all duration-200 cursor-pointer",
+                  "w-full text-left rounded-xl border transition-all duration-200",
                   "bg-white dark:bg-surface-dark-2 border-gray-100 dark:border-gray-800",
                   "hover:border-brand-200 dark:hover:border-brand-800",
                   isExpanded && "ring-1 ring-brand-500/20"
                 )}
                 onClick={() => setExpandedId(isExpanded ? null : citation.id)}
+                aria-expanded={isExpanded}
               >
                 <div className="flex items-start gap-3 p-3">
                   <div
@@ -200,7 +206,7 @@ export function CitationsSidebar({
                     </div>
                   </div>
                 )}
-              </div>
+              </button>
             );
           })
         )}

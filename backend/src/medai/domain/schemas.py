@@ -12,9 +12,12 @@ from pydantic import BaseModel, Field
 
 from medai.domain.entities import (
     ApprovalStatus,
+    ConfidenceMethod,
     Finding,
+    InferenceMetadata,
     JudgmentResult,
     Modality,
+    PipelineMetrics,
 )
 
 
@@ -35,12 +38,20 @@ class CaseAnalysisRequest(BaseModel):
 
 
 class CaseAnalysisResponse(BaseModel):
-    """AI analysis result returned to the doctor."""
+    """AI analysis result returned to the doctor.
+
+    This is the PRIMARY contract between backend and frontend.
+    Frontend renders the entire report from this single response.
+    """
     report_id: str
     encounter_id: str
     patient_id: str
     diagnosis: str
-    confidence: float
+    confidence: float = Field(description="Overall confidence (see confidence_method for how it was computed)")
+    confidence_method: ConfidenceMethod = Field(
+        default=ConfidenceMethod.MODEL_SELF_REPORTED,
+        description="How the top-level confidence was determined — display as tooltip",
+    )
     evidence_summary: str
     timeline_impact: str
     plan: list[str]
@@ -52,6 +63,11 @@ class CaseAnalysisResponse(BaseModel):
     # Explainability artifacts
     heatmap_urls: list[str] = Field(default_factory=list)
     specialist_summaries: dict[str, str] = Field(default_factory=dict)
+    # Performance / provenance
+    pipeline_metrics: PipelineMetrics | None = Field(
+        default=None,
+        description="Timing breakdown for the full pipeline — render in performance panel",
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -82,6 +98,14 @@ class PatientCreateRequest(BaseModel):
     name: str
     date_of_birth: str  # ISO date
     gender: str = "unknown"
+    medical_record_number: str | None = None
+
+
+class PatientUpdateRequest(BaseModel):
+    """Update an existing patient record. All fields optional."""
+    name: str | None = None
+    date_of_birth: str | None = None  # ISO date
+    gender: str | None = None
     medical_record_number: str | None = None
 
 
@@ -145,3 +169,37 @@ class HealthResponse(BaseModel):
     version: str
     tools_registered: list[str] = Field(default_factory=list)
     debug: bool = False
+    db_connected: bool = True
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Authentication
+# ═══════════════════════════════════════════════════════════════
+
+class LoginRequest(BaseModel):
+    """Login credentials."""
+    email: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    """New user registration."""
+    email: str
+    password: str
+    name: str
+    role: str = "doctor"
+
+
+class UserResponse(BaseModel):
+    """Public user info (no password hash)."""
+    id: str
+    email: str
+    name: str
+    role: str
+
+
+class AuthResponse(BaseModel):
+    """Token + user info returned on login/register."""
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
