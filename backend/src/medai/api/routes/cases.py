@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from medai.api.dependencies import get_orchestrator, get_report_repository
+from medai.config import get_settings
 from medai.domain.interfaces import BaseOrchestrator, BaseReportRepository
 from medai.domain.schemas import (
     CaseAnalysisRequest,
@@ -14,6 +16,7 @@ from medai.domain.schemas import (
     ReportApprovalRequest,
     ReportApprovalResponse,
 )
+from medai.services.artifact_storage import ArtifactStorage
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -42,17 +45,40 @@ async def analyze_case(
     # Persist the report
     await report_repo.save(report)
 
+    # Set up artifact storage for heatmaps
+    settings = get_settings()
+    artifact_store = ArtifactStorage(settings.storage_local_path)
+
     # Map domain report → API response
     heatmap_urls = []
     specialist_summaries = {}
     for tool_name, output in report.specialist_outputs.items():
         if isinstance(output, dict):
-            if "attention_heatmap_url" in output and output["attention_heatmap_url"]:
-                heatmap_urls.append(output["attention_heatmap_url"])
-            # Also collect per-condition heatmaps
+            # Top-level attention_heatmap_url
+            raw_heatmap = output.get("attention_heatmap_url") or ""
+            if raw_heatmap.startswith("data:image/"):
+                saved = artifact_store.save_data_uri(
+                    raw_heatmap, prefix=f"{tool_name}_top", report_id=report.id,
+                )
+                if saved:
+                    heatmap_urls.append(f"/storage/{saved}")
+            elif raw_heatmap:
+                heatmap_urls.append(raw_heatmap)
+
+            # Per-condition heatmaps from image_explainability
             for cs in output.get("condition_scores", []):
-                if isinstance(cs, dict) and cs.get("heatmap_data_uri"):
-                    heatmap_urls.append(cs["heatmap_data_uri"])
+                if isinstance(cs, dict) and cs.get("heatmap_data_uri", ""):
+                    uri = cs["heatmap_data_uri"]
+                    label_slug = cs.get("label", "unknown").replace(" ", "_")[:30]
+                    if uri.startswith("data:image/"):
+                        saved = artifact_store.save_data_uri(
+                            uri, prefix=f"heatmap_{label_slug}", report_id=report.id,
+                        )
+                        if saved:
+                            heatmap_urls.append(f"/storage/{saved}")
+                    elif uri:
+                        heatmap_urls.append(uri)
+
             # Create short summary per tool
             if "assessment" in output:
                 specialist_summaries[tool_name] = output["assessment"]
@@ -65,11 +91,19 @@ async def analyze_case(
                 scores = output["condition_scores"]
                 model_id = output.get("inference", {}).get("model_id", "MedSigLIP") if isinstance(output.get("inference"), dict) else "MedSigLIP"
                 lines = [f"Model: {model_id}"]
-                for cs in sorted(scores, key=lambda s: s.get("probability", 0), reverse=True)[:5] if isinstance(scores, list) else []:
-                    label = cs.get("label", "?")
-                    prob = cs.get("probability", 0)
-                    lines.append(f"  {label}: {prob:.1%}")
+                if isinstance(scores, list):
+                    for cs in sorted(scores, key=lambda s: s.get("probability", 0), reverse=True)[:5]:
+                        label = cs.get("label", "?")
+                        prob = cs.get("probability", 0)
+                        lines.append(f"  {label}: {prob:.1%}")
                 specialist_summaries[tool_name] = "\n".join(lines)
+
+    # Save full report as structured JSON artifact
+    artifact_store.save_json_artifact(
+        report.model_dump(mode="json"),
+        filename="full_report.json",
+        report_id=report.id,
+    )
 
     return CaseAnalysisResponse(
         report_id=report.id,

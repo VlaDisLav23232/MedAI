@@ -349,3 +349,23 @@ class TestRegisterHttpTools:
         assert tools[ToolName.TEXT_REASONING]._endpoint == "http://text:8011"
         assert tools[ToolName.AUDIO_ANALYSIS]._endpoint == "http://audio:8013"
         assert tools[ToolName.IMAGE_EXPLAINABILITY]._endpoint == "http://siglip:8012"
+
+    def test_factory_without_27b(self):
+        import os
+        os.environ["ANTHROPIC_API_KEY"] = "sk-test"
+        settings = Settings(
+            anthropic_api_key="sk-test",
+            medgemma_4b_endpoint="http://image:8010",
+            medgemma_27b_endpoint="http://text:8011",
+            hear_endpoint="http://audio:8013",
+            medsiglip_endpoint="http://siglip:8012",
+            enable_27b_reasoning=False,
+        )
+        tools = register_http_tools(settings)
+
+        assert len(tools) == 4
+        assert ToolName.IMAGE_ANALYSIS in tools
+        assert ToolName.TEXT_REASONING not in tools
+        assert ToolName.AUDIO_ANALYSIS in tools
+        assert ToolName.HISTORY_SEARCH in tools
+        assert ToolName.IMAGE_EXPLAINABILITY in tools

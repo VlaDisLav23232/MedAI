@@ -29,6 +29,7 @@ from medai.domain.entities import (
     ConfidenceMethod,
     Finding,
     FinalReport,
+    JudgmentResult,
     JudgeVerdict,
     PipelineMetrics,
     SpecialistResults,
@@ -148,32 +149,63 @@ class ClaudeOrchestrator(BaseOrchestrator):
         t0 = time.monotonic()
         logger.info("⚖️  PHASE: JUDGE", phase="JUDGE")
 
-        judgment = await self._judge.evaluate(request, specialist_results)
+        if not self._settings.judge_enabled:
+            logger.info("⏭️  JUDGE_SKIPPED (judge_enabled=false)", phase="JUDGE")
+            judgment = JudgmentResult(
+                verdict=JudgeVerdict.CONSENSUS,
+                confidence=0.7,
+                reasoning="Judge disabled by configuration — returning default consensus.",
+                contradictions=[],
+                low_confidence_items=[],
+                missing_context=[],
+                requery_tools=[],
+            )
+        else:
+            judgment = await self._judge.evaluate(request, specialist_results)
 
         # ── Phase 4b: Re-query if conflict ──
         cycle = 0
+        # Track which tools already produced a valid result — never re-run them
+        _succeeded_tools = set(specialist_results.results.keys())
         while (
-            judgment.verdict == JudgeVerdict.CONFLICT
+            self._settings.judge_enabled
+            and judgment.verdict == JudgeVerdict.CONFLICT
             and judgment.requery_tools
             and cycle < self._settings.max_judgment_cycles
         ):
             cycle += 1
+            # Filter out tools that already succeeded — only re-run failures
+            requery_needed = [
+                t for t in judgment.requery_tools
+                if t.value not in _succeeded_tools
+            ]
+            if not requery_needed:
+                logger.info(
+                    "⏭️  REQUERY_SKIPPED — all requested tools already succeeded",
+                    phase="JUDGE",
+                    cycle=cycle,
+                    requested=[t.value for t in judgment.requery_tools],
+                )
+                break
+
             logger.info(
                 "🔄 REQUERY_CYCLE",
                 phase="JUDGE",
                 cycle=cycle,
-                tools=judgment.requery_tools,
+                tools=[t.value for t in requery_needed],
+                skipped=[t.value for t in judgment.requery_tools if t not in requery_needed],
             )
 
             additional_results = await self.dispatch_tools(
-                tool_names=judgment.requery_tools,
+                tool_names=requery_needed,
                 tool_inputs={
                     tool: self._build_requery_input(tool, request, specialist_results)
-                    for tool in judgment.requery_tools
+                    for tool in requery_needed
                 },
             )
             specialist_results.results.update(additional_results.results)
             specialist_results.errors.update(additional_results.errors)
+            _succeeded_tools.update(additional_results.results.keys())
 
             judgment = await self._judge.evaluate(request, specialist_results)
 
@@ -551,6 +583,10 @@ class ClaudeOrchestrator(BaseOrchestrator):
 
         elif tool == ToolName.AUDIO_ANALYSIS and request.audio_urls:
             base_input["audio_url"] = request.audio_urls[0]
+
+        elif tool == ToolName.IMAGE_EXPLAINABILITY and request.image_urls:
+            base_input["image_url"] = request.image_urls[0]
+            base_input["modality_hint"] = "xray"  # safe default
 
         return base_input
 

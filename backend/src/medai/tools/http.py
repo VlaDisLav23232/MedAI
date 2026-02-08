@@ -751,17 +751,14 @@ def register_http_tools(settings: Settings) -> dict[ToolName, BaseTool]:
 
     Maps config endpoints to the correct tool implementation:
     - medgemma_4b_endpoint → image analysis
-    - medgemma_27b_endpoint → text reasoning
+    - medgemma_27b_endpoint → text reasoning (skipped if enable_27b_reasoning=False)
     - hear_endpoint → audio analysis
     - medgemma_27b_endpoint → history search (RAG + LLM)
     - medsiglip_endpoint → image explainability (SigLIP)
     """
-    return {
+    tools: dict[ToolName, BaseTool] = {
         ToolName.IMAGE_ANALYSIS: HttpImageAnalysisTool(
             endpoint=settings.medgemma_4b_endpoint,
-        ),
-        ToolName.TEXT_REASONING: HttpTextReasoningTool(
-            endpoint=settings.medgemma_27b_endpoint,
         ),
         ToolName.AUDIO_ANALYSIS: HttpAudioAnalysisTool(
             endpoint=settings.hear_endpoint,
@@ -774,3 +771,12 @@ def register_http_tools(settings: Settings) -> dict[ToolName, BaseTool]:
             taxonomy_path=str(settings.siglip_taxonomy_path),
         ),
     }
+
+    if settings.enable_27b_reasoning:
+        tools[ToolName.TEXT_REASONING] = HttpTextReasoningTool(
+            endpoint=settings.medgemma_27b_endpoint,
+        )
+    else:
+        logger.info("⏭️  TEXT_REASONING_DISABLED (enable_27b_reasoning=false)")
+
+    return tools
