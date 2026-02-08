@@ -14,7 +14,23 @@ from medai.domain.entities import (
     Patient,
     TimelineEvent,
     TimelineEventType,
+    User,
+    UserRole,
 )
+
+
+def create_admin_user() -> User:
+    """Create default admin user (password: admin)."""
+    from medai.api.auth import hash_password
+
+    return User(
+        id="USR-ADMIN001",
+        email="admin@medai.local",
+        hashed_password=hash_password("admin"),
+        name="System Administrator",
+        role=UserRole.ADMIN,
+        is_active=True,
+    )
 
 
 def create_seed_patients() -> list[Patient]:

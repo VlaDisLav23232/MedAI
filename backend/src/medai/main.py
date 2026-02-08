@@ -17,6 +17,7 @@ from medai import __version__
 from medai.api.routes import health, cases, patients, auth
 from medai.config import get_settings
 from medai.repositories.database import dispose_db, init_db
+from medai.repositories.seed_init import seed_initial_data
 
 
 @asynccontextmanager
@@ -35,7 +36,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize database tables (dev convenience — use Alembic in prod)
     await init_db()
     logger.info("database_initialized")
+# Seed admin user + demo patients
+    await seed_initial_data()
 
+    
     yield  # App is running
 
     # Clean shutdown
