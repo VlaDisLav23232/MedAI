@@ -13,6 +13,8 @@ from enum import Enum
 from typing import Any, Literal
 
 import structlog
+
+from medai.services.orchestrator import _strip_base64_data_uris
 from anthropic import AsyncAnthropic, transform_schema
 from pydantic import BaseModel, Field
 
@@ -47,7 +49,7 @@ class JudgmentResponse(BaseModel):
     contradictions: list[str] = Field(default_factory=list, description="Contradictions found between specialist outputs")
     low_confidence_items: list[str] = Field(default_factory=list, description="Items with confidence below threshold")
     missing_context: list[str] = Field(default_factory=list, description="Missing information that would improve analysis")
-    requery_tools: list[Literal["image_analysis", "text_reasoning", "audio_analysis", "history_search"]] = Field(
+    requery_tools: list[Literal["image_analysis", "text_reasoning", "audio_analysis", "history_search", "image_explainability"]] = Field(
         default_factory=list,
         description="Tool names to re-run if verdict is conflict",
     )
@@ -169,7 +171,9 @@ class ClaudeJudge(BaseJudge):
                 # Internal entries like _synthesis are plain strings
                 sections.append(f"### {tool_name}\n{output}")
             elif hasattr(output, "model_dump_json"):
-                sections.append(f"### {tool_name}\n```json\n{output.model_dump_json(indent=2)}\n```")
+                raw = output.model_dump_json(indent=2)
+                sanitised = _strip_base64_data_uris(raw)
+                sections.append(f"### {tool_name}\n```json\n{sanitised}\n```")
             else:
                 sections.append(f"### {tool_name}\n{output}")
         for tool_name, error in results.errors.items():

@@ -76,6 +76,12 @@ class Settings(BaseSettings):
         description="HeAR audio encoder endpoint",
     )
 
+    # ── SigLIP Explainability ──────────────────────────────
+    siglip_taxonomy_path: Path = Field(
+        default=Path(__file__).parent / "tools" / "condition_taxonomy.json",
+        description="Path to per-modality condition label taxonomy JSON",
+    )
+
     # ── Database ───────────────────────────────────────────
     database_url: str = Field(
         default="sqlite+aiosqlite:///./medai.db",

@@ -80,6 +80,7 @@ async def main():
     info(f"Orchestrator model: {settings.orchestrator_model}")
     info(f"MedGemma 4B endpoint: {settings.medgemma_4b_endpoint}")
     info(f"MedGemma 27B endpoint: {settings.medgemma_27b_endpoint}")
+    info(f"MedSigLIP endpoint: {settings.medsiglip_endpoint}")
     info(f"HeAR endpoint: {settings.hear_endpoint}")
 
     if settings.debug:
@@ -228,6 +229,28 @@ async def main():
             lines = summary[:300].split("\n")
             for line in lines[:4]:
                 print(f"      {line}")
+
+        section("🧬 MedSigLIP EXPLAINABILITY")
+        ie_summary = report.get("specialist_summaries", {}).get("image_explainability")
+        heatmap_urls = report.get("heatmap_urls", [])
+        tools_called = report.get("pipeline_metrics", {}).get("tools_called", [])
+
+        if "image_explainability" in tools_called:
+            success("image_explainability was called by the orchestrator")
+        else:
+            warn("image_explainability was NOT called (orchestrator didn't invoke it)")
+
+        if ie_summary:
+            success(f"image_explainability specialist summary present ({len(ie_summary)} chars)")
+        else:
+            warn("No image_explainability summary in specialist_summaries")
+
+        if heatmap_urls:
+            success(f"{len(heatmap_urls)} heatmap URLs in report")
+            for i, url in enumerate(heatmap_urls[:3]):
+                info(f"  [{i+1}] {url[:80]}…" if len(url) > 80 else f"  [{i+1}] {url}")
+        else:
+            warn("No heatmap_urls in report — MedSigLIP heatmaps not extracted")
 
         section("🕐 TIMELINE IMPACT")
         print(f"    {report.get('timeline_impact', 'N/A')[:200]}")

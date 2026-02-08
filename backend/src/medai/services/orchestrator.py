@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -40,6 +41,24 @@ from medai.services.tool_registry import ToolRegistry
 
 logger = structlog.get_logger()
 
+# ── Helpers ────────────────────────────────────────────────
+
+# Matches data:image/...;base64,<long_base64>  inside JSON string values.
+_BASE64_DATA_URI_RE = re.compile(
+    r'"data:image/[^;]+;base64,[A-Za-z0-9+/=]+"'
+)
+
+
+def _strip_base64_data_uris(content: str) -> str:
+    """Replace base64 data URIs with a placeholder to save tokens.
+
+    The full binary data is preserved in ``SpecialistResults`` for
+    heatmap extraction in ``cases.py``.  Only the serialised text
+    sent back to Claude is trimmed.
+    """
+    return _BASE64_DATA_URI_RE.sub('"[base64_image_data_stripped]"', content)
+
+
 ORCHESTRATOR_SYSTEM_PROMPT = """\
 You are a medical AI orchestrator. A doctor has submitted a patient case for analysis.
 
@@ -54,6 +73,8 @@ RULES:
 3. Use text_reasoning when patient history, lab results, or complex clinical questions are present.
 4. Use audio_analysis only when audio recordings are provided.
 5. You may call DIFFERENT tools in parallel (one image_analysis + one history_search, etc.).
+5b. Use image_explainability alongside image_analysis when medical images are provided — \
+it generates spatial heatmaps showing which regions triggered each finding. Call both in parallel.
 6. NEVER call the same tool more than once per turn. One call per tool name per iteration.
 7. Call text_reasoning ONCE with all available context — do NOT split into multiple calls.
 8. After receiving all tool results, synthesize a BRIEF final diagnosis (under 300 words).
@@ -372,6 +393,10 @@ class ClaudeOrchestrator(BaseOrchestrator):
                 )
 
                 content = output.model_dump_json() if hasattr(output, "model_dump_json") else json.dumps(output)
+                # Strip base64 data URIs to avoid blowing up the Claude
+                # context window. The full data is preserved in results
+                # for heatmap extraction in cases.py.
+                content = _strip_base64_data_uris(content)
                 return {
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
@@ -551,6 +576,11 @@ class MockOrchestrator(BaseOrchestrator):
             tool_inputs[ToolName.IMAGE_ANALYSIS] = {
                 "image_url": request.image_urls[0],
                 "clinical_context": request.clinical_context,
+            }
+            tools_to_call.append(ToolName.IMAGE_EXPLAINABILITY)
+            tool_inputs[ToolName.IMAGE_EXPLAINABILITY] = {
+                "image_url": request.image_urls[0],
+                "modality_hint": "xray",
             }
 
         if request.audio_urls:

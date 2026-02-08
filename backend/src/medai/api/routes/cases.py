@@ -49,6 +49,10 @@ async def analyze_case(
         if isinstance(output, dict):
             if "attention_heatmap_url" in output and output["attention_heatmap_url"]:
                 heatmap_urls.append(output["attention_heatmap_url"])
+            # Also collect per-condition heatmaps
+            for cs in output.get("condition_scores", []):
+                if isinstance(cs, dict) and cs.get("heatmap_data_uri"):
+                    heatmap_urls.append(cs["heatmap_data_uri"])
             # Create short summary per tool
             if "assessment" in output:
                 specialist_summaries[tool_name] = output["assessment"]
@@ -56,6 +60,16 @@ async def analyze_case(
                 specialist_summaries[tool_name] = output["summary"]
             elif "timeline_context" in output:
                 specialist_summaries[tool_name] = output["timeline_context"]
+            elif "condition_scores" in output:
+                # image_explainability — build a readable synopsis
+                scores = output["condition_scores"]
+                model_id = output.get("inference", {}).get("model_id", "MedSigLIP") if isinstance(output.get("inference"), dict) else "MedSigLIP"
+                lines = [f"Model: {model_id}"]
+                for cs in sorted(scores, key=lambda s: s.get("probability", 0), reverse=True)[:5] if isinstance(scores, list) else []:
+                    label = cs.get("label", "?")
+                    prob = cs.get("probability", 0)
+                    lines.append(f"  {label}: {prob:.1%}")
+                specialist_summaries[tool_name] = "\n".join(lines)
 
     return CaseAnalysisResponse(
         report_id=report.id,
@@ -95,12 +109,24 @@ async def get_report(
         if isinstance(output, dict):
             if "attention_heatmap_url" in output and output["attention_heatmap_url"]:
                 heatmap_urls.append(output["attention_heatmap_url"])
+            for cs in output.get("condition_scores", []):
+                if isinstance(cs, dict) and cs.get("heatmap_data_uri"):
+                    heatmap_urls.append(cs["heatmap_data_uri"])
             if "assessment" in output:
                 specialist_summaries[tool_name] = output["assessment"]
             elif "summary" in output:
                 specialist_summaries[tool_name] = output["summary"]
             elif "timeline_context" in output:
                 specialist_summaries[tool_name] = output["timeline_context"]
+            elif "condition_scores" in output:
+                scores = output["condition_scores"]
+                model_id = output.get("inference", {}).get("model_id", "MedSigLIP") if isinstance(output.get("inference"), dict) else "MedSigLIP"
+                lines = [f"Model: {model_id}"]
+                for cs in sorted(scores, key=lambda s: s.get("probability", 0), reverse=True)[:5] if isinstance(scores, list) else []:
+                    label = cs.get("label", "?")
+                    prob = cs.get("probability", 0)
+                    lines.append(f"  {label}: {prob:.1%}")
+                specialist_summaries[tool_name] = "\n".join(lines)
 
     return CaseAnalysisResponse(
         report_id=report.id,

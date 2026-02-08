@@ -16,11 +16,14 @@ from typing import Any
 from medai.domain.entities import (
     AudioAnalysisOutput,
     AudioSegment,
+    ConditionScore,
     EvidenceCitation,
     Finding,
     HistoryRecord,
     HistorySearchOutput,
     ImageAnalysisOutput,
+    ImageExplainabilityOutput,
+    InferenceMetadata,
     Modality,
     Severity,
     TextReasoningOutput,
@@ -320,6 +323,105 @@ class MockHistorySearchTool(BaseTool):
         )
 
 
+class MockImageExplainabilityTool(BaseTool):
+    """Mock image explainability — returns realistic SigLIP-style condition scores.
+
+    Probabilities are drawn from a realistic distribution (not all 0.9).
+    Heatmap URIs use placeholder paths — the real endpoint returns base64 PNGs.
+    """
+
+    @property
+    def name(self) -> ToolName:
+        return ToolName.IMAGE_EXPLAINABILITY
+
+    @property
+    def description(self) -> str:
+        return (
+            "Generate visual explainability heatmaps for medical images using "
+            "zero-shot classification. Highlights which image regions match "
+            "clinical conditions. Returns per-condition similarity probabilities "
+            "(real sigmoid scores, not LLM-generated) and spatial activation maps."
+        )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "image_url": {
+                    "type": "string",
+                    "description": "URL or path to the medical image to analyze",
+                },
+                "modality_hint": {
+                    "type": "string",
+                    "description": "Image modality — determines which condition labels to check",
+                    "enum": [m.value for m in Modality],
+                },
+                "clinical_context": {
+                    "type": "string",
+                    "description": "Clinical context (used for additional label context)",
+                },
+                "condition_labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional override: custom condition labels to score against.",
+                },
+            },
+            "required": ["image_url"],
+            "additionalProperties": False,
+        }
+
+    async def execute(self, **kwargs: Any) -> ImageExplainabilityOutput:
+        return ImageExplainabilityOutput(
+            modality_detected=Modality.XRAY,
+            condition_scores=[
+                ConditionScore(
+                    label="consolidation consistent with pneumonia",
+                    probability=0.42,
+                    sigmoid_score=3.2e-05,
+                    raw_logit=-10.35,
+                    heatmap_data_uri="/api/v1/artifacts/mock-heatmap-siglip-001/pneumonia.png",
+                ),
+                ConditionScore(
+                    label="cardiomegaly with enlarged heart silhouette",
+                    probability=0.28,
+                    sigmoid_score=2.1e-05,
+                    raw_logit=-10.77,
+                    heatmap_data_uri="/api/v1/artifacts/mock-heatmap-siglip-001/cardiomegaly.png",
+                ),
+                ConditionScore(
+                    label="pleural effusion with blunting of costophrenic angle",
+                    probability=0.15,
+                    sigmoid_score=1.1e-05,
+                    raw_logit=-11.42,
+                    heatmap_data_uri="/api/v1/artifacts/mock-heatmap-siglip-001/effusion.png",
+                ),
+                ConditionScore(
+                    label="normal lung fields with no abnormality",
+                    probability=0.10,
+                    sigmoid_score=7.5e-06,
+                    raw_logit=-11.80,
+                    heatmap_data_uri=None,
+                ),
+                ConditionScore(
+                    label="pneumothorax with absent lung markings",
+                    probability=0.05,
+                    sigmoid_score=3.8e-06,
+                    raw_logit=-12.48,
+                    heatmap_data_uri=None,
+                ),
+            ],
+            attention_heatmap_url="/api/v1/artifacts/mock-heatmap-siglip-001/pneumonia.png",
+            embedding=[0.012, -0.034, 0.056, 0.078, -0.091],  # truncated mock
+            inference=InferenceMetadata(
+                model_id="google/medsiglip-448",
+                temperature=0.0,
+                token_count=0,
+                inference_time_ms=142.3,
+            ),
+        )
+
+
 def register_mock_tools() -> dict[ToolName, BaseTool]:
     """Factory function: create all mock tools.
 
@@ -330,5 +432,6 @@ def register_mock_tools() -> dict[ToolName, BaseTool]:
         ToolName.TEXT_REASONING: MockTextReasoningTool(),
         ToolName.AUDIO_ANALYSIS: MockAudioAnalysisTool(),
         ToolName.HISTORY_SEARCH: MockHistorySearchTool(),
+        ToolName.IMAGE_EXPLAINABILITY: MockImageExplainabilityTool(),
     }
     return tools

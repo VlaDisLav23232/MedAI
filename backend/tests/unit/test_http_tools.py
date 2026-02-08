@@ -333,16 +333,19 @@ class TestRegisterHttpTools:
             medgemma_4b_endpoint="http://image:8010",
             medgemma_27b_endpoint="http://text:8011",
             hear_endpoint="http://audio:8013",
+            medsiglip_endpoint="http://siglip:8012",
         )
         tools = register_http_tools(settings)
 
-        assert len(tools) == 4
+        assert len(tools) == 5
         assert ToolName.IMAGE_ANALYSIS in tools
         assert ToolName.TEXT_REASONING in tools
         assert ToolName.AUDIO_ANALYSIS in tools
         assert ToolName.HISTORY_SEARCH in tools
+        assert ToolName.IMAGE_EXPLAINABILITY in tools
 
         # Verify endpoints are correctly assigned
         assert tools[ToolName.IMAGE_ANALYSIS]._endpoint == "http://image:8010"
         assert tools[ToolName.TEXT_REASONING]._endpoint == "http://text:8011"
         assert tools[ToolName.AUDIO_ANALYSIS]._endpoint == "http://audio:8013"
+        assert tools[ToolName.IMAGE_EXPLAINABILITY]._endpoint == "http://siglip:8012"

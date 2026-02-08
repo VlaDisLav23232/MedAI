@@ -23,11 +23,13 @@ from medai.config import Settings
 from medai.domain.entities import (
     AudioAnalysisOutput,
     AudioSegment,
+    ConditionScore,
     EvidenceCitation,
     Finding,
     HistoryRecord,
     HistorySearchOutput,
     ImageAnalysisOutput,
+    ImageExplainabilityOutput,
     InferenceMetadata,
     Modality,
     Severity,
@@ -348,12 +350,32 @@ class HttpTextReasoningTool(_HttpToolBase):
 
         inference = _parse_inference_metadata(data)
 
+        def _safe_parse_date(raw: str | None) -> datetime | None:
+            """Parse date strings robustly — MedGemma may return
+            free-text dates like 'Feb 2026' instead of ISO format."""
+            if not raw:
+                return None
+            # 1. Try ISO format first (fast path)
+            try:
+                return datetime.fromisoformat(raw)
+            except (ValueError, TypeError):
+                pass
+            # 2. Try common informal formats MedGemma produces
+            from dateutil import parser as dateutil_parser
+            try:
+                return dateutil_parser.parse(raw, fuzzy=True)
+            except Exception:
+                pass
+            # 3. Give up gracefully — never crash the whole tool
+            logger.debug("unparseable_date_skipped", raw=raw)
+            return None
+
         evidence = [
             EvidenceCitation(
                 source=c.get("source", "unknown"),
                 source_type=c.get("source_type", "unknown"),
                 relevant_excerpt=c.get("relevant_excerpt", ""),
-                date=datetime.fromisoformat(c["date"]) if c.get("date") else None,
+                date=_safe_parse_date(c.get("date")),
             )
             for c in data.get("evidence_citations", [])
         ]
@@ -499,9 +521,23 @@ class HttpHistorySearchTool(_HttpToolBase):
         """Parse history search response."""
         from datetime import datetime
 
+        def _safe_parse_date_hs(raw: str | None) -> datetime:
+            """Robust date parsing for history records."""
+            if not raw:
+                return datetime.now()
+            try:
+                return datetime.fromisoformat(raw)
+            except (ValueError, TypeError):
+                pass
+            from dateutil import parser as dateutil_parser
+            try:
+                return dateutil_parser.parse(raw, fuzzy=True)
+            except Exception:
+                return datetime.now()
+
         records = [
             HistoryRecord(
-                date=datetime.fromisoformat(r["date"]) if r.get("date") else datetime.now(),
+                date=_safe_parse_date_hs(r.get("date")),
                 record_type=r.get("record_type", "unknown"),
                 summary=r.get("summary", ""),
                 similarity_score=float(r.get("similarity_score", 0.5)),
@@ -518,6 +554,194 @@ class HttpHistorySearchTool(_HttpToolBase):
 
 
 # ═══════════════════════════════════════════════════════════════
+#  HttpSigLipTool (Image Explainability)
+# ═══════════════════════════════════════════════════════════════
+
+# Taxonomy loader — cached after first load
+_taxonomy_cache: dict[str, list[str]] | None = None
+
+
+def _load_taxonomy(taxonomy_path: str | None = None) -> dict[str, list[str]]:
+    """Load per-modality condition labels from JSON taxonomy file.
+
+    Cached after first call. Falls back to minimal defaults if file missing.
+    """
+    global _taxonomy_cache
+    if _taxonomy_cache is not None:
+        return _taxonomy_cache
+
+    import json
+    from pathlib import Path
+
+    if taxonomy_path is None:
+        taxonomy_path = str(Path(__file__).parent / "condition_taxonomy.json")
+
+    try:
+        with open(taxonomy_path) as f:
+            data = json.load(f)
+        # Filter out _meta key
+        _taxonomy_cache = {k: v for k, v in data.items() if not k.startswith("_")}
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.warning("taxonomy_load_failed", path=taxonomy_path, error=str(e))
+        _taxonomy_cache = {
+            "other": ["abnormality or lesion", "normal anatomy"],
+        }
+
+    return _taxonomy_cache
+
+
+class HttpSigLipTool(_HttpToolBase):
+    """Calls SigLIP endpoint for zero-shot medical image explainability.
+
+    Produces per-condition sigmoid probabilities (real contrastive scores,
+    not LLM-generated) and spatial activation heatmaps. Each heatmap is a
+    pure activation map — no original image overlay.
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        taxonomy_path: str | None = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        max_retries: int = MAX_RETRIES,
+    ) -> None:
+        super().__init__(endpoint, timeout=timeout, max_retries=max_retries)
+        self._taxonomy_path = taxonomy_path
+
+    @property
+    def name(self) -> ToolName:
+        return ToolName.IMAGE_EXPLAINABILITY
+
+    @property
+    def description(self) -> str:
+        return (
+            "Generate visual explainability heatmaps for medical images using "
+            "zero-shot classification. Highlights which image regions match "
+            "clinical conditions. Returns per-condition similarity probabilities "
+            "(real sigmoid scores, not LLM-generated) and spatial activation maps."
+        )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "image_url": {
+                    "type": "string",
+                    "description": "URL or path to the medical image to analyze",
+                },
+                "modality_hint": {
+                    "type": "string",
+                    "description": "Image modality — determines which condition labels to check",
+                    "enum": [m.value for m in Modality],
+                },
+                "clinical_context": {
+                    "type": "string",
+                    "description": "Clinical context (used for additional label context)",
+                },
+                "condition_labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Optional override: custom condition labels to score against. "
+                        "If omitted, uses per-modality defaults from taxonomy."
+                    ),
+                },
+            },
+            "required": ["image_url"],
+            "additionalProperties": False,
+        }
+
+    def _build_request_payload(self, **kwargs: Any) -> dict[str, Any]:
+        """Build request with taxonomy-based labels + optional overrides."""
+        modality_hint = kwargs.get("modality_hint", "other")
+
+        # Load taxonomy labels for this modality
+        taxonomy = _load_taxonomy(self._taxonomy_path)
+        default_labels = taxonomy.get(modality_hint, taxonomy.get("other", []))
+
+        # Request-provided labels override OR extend defaults
+        custom_labels = kwargs.get("condition_labels")
+        if custom_labels and isinstance(custom_labels, list) and len(custom_labels) > 0:
+            labels = custom_labels
+        else:
+            labels = default_labels
+
+        payload: dict[str, Any] = {
+            "image_url": kwargs.get("image_url", ""),
+            "condition_labels": labels,
+            "modality_hint": modality_hint,
+            "return_embedding": True,
+            "top_k_heatmaps": 5,
+        }
+
+        # Forward base64 image if provided (avoids remote fetch failures)
+        image_base64 = kwargs.get("image_base64", "")
+        if image_base64:
+            payload["image_base64"] = image_base64
+
+        return payload
+
+    def _parse_response(self, data: dict[str, Any]) -> ImageExplainabilityOutput:
+        """Parse SigLIP explainability response into structured output."""
+        modality_hint = data.get("modality_hint", "other")
+
+        # Build condition scores from response
+        condition_scores = []
+        # Map label→heatmap for lookup
+        heatmap_map: dict[str, str] = {}
+        for hm in data.get("heatmaps", []):
+            b64 = hm.get("heatmap_base64", "")
+            if b64:
+                heatmap_map[hm["label"]] = f"data:image/png;base64,{b64}"
+
+        for score_entry in data.get("scores", []):
+            label = score_entry.get("label", "")
+            prob = float(score_entry.get("probability", 0.0))
+            sigmoid = score_entry.get("sigmoid_score")
+            logit = score_entry.get("raw_logit")
+            condition_scores.append(ConditionScore(
+                label=label,
+                probability=prob,
+                sigmoid_score=float(sigmoid) if sigmoid is not None else None,
+                raw_logit=float(logit) if logit is not None else None,
+                heatmap_data_uri=heatmap_map.get(label),
+            ))
+
+        # Top-scoring condition's heatmap → attention_heatmap_url
+        # (triggers auto-extraction in cases.py)
+        top_heatmap_url = None
+        if condition_scores:
+            top = max(condition_scores, key=lambda c: c.probability)
+            top_heatmap_url = top.heatmap_data_uri
+
+        # Image embedding
+        raw_embedding = data.get("image_embedding")
+        embedding = raw_embedding if isinstance(raw_embedding, list) else None
+
+        # Inference metadata
+        inference = None
+        model_id = data.get("model_id")
+        inference_ms = data.get("inference_time_ms")
+        if model_id:
+            inference = InferenceMetadata(
+                model_id=model_id,
+                temperature=0.0,  # deterministic forward pass
+                token_count=0,    # not a generative model
+                inference_time_ms=float(inference_ms) if inference_ms else 0.0,
+            )
+
+        return ImageExplainabilityOutput(
+            modality_detected=_normalize_modality(modality_hint),
+            condition_scores=condition_scores,
+            attention_heatmap_url=top_heatmap_url,
+            embedding=embedding,
+            inference=inference,
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
 #  Factory — create all HTTP tools from Settings
 # ═══════════════════════════════════════════════════════════════
 
@@ -530,6 +754,7 @@ def register_http_tools(settings: Settings) -> dict[ToolName, BaseTool]:
     - medgemma_27b_endpoint → text reasoning
     - hear_endpoint → audio analysis
     - medgemma_27b_endpoint → history search (RAG + LLM)
+    - medsiglip_endpoint → image explainability (SigLIP)
     """
     return {
         ToolName.IMAGE_ANALYSIS: HttpImageAnalysisTool(
@@ -543,5 +768,9 @@ def register_http_tools(settings: Settings) -> dict[ToolName, BaseTool]:
         ),
         ToolName.HISTORY_SEARCH: HttpHistorySearchTool(
             endpoint=settings.medgemma_27b_endpoint,
+        ),
+        ToolName.IMAGE_EXPLAINABILITY: HttpSigLipTool(
+            endpoint=settings.medsiglip_endpoint,
+            taxonomy_path=str(settings.siglip_taxonomy_path),
         ),
     }

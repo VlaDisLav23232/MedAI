@@ -1,0 +1,139 @@
+{
+    "_meta": {
+        "description": "Per-modality condition labels for SigLIP zero-shot explainability. Each label should be a descriptive clinical phrase (not single words) for best text-vision alignment. SigLIP sigmoid scores are independent per label — multiple conditions can score high.",
+        "usage": "Loaded by HttpSigLipTool. Can be overridden per-request via condition_labels field.",
+        "modality_enum_source": "backend/src/medai/domain/entities.py::Modality"
+    },
+    "xray": [
+        "consolidation consistent with pneumonia",
+        "pleural effusion with blunting of costophrenic angle",
+        "cardiomegaly with enlarged heart silhouette",
+        "pneumothorax with absent lung markings",
+        "pulmonary nodule or mass",
+        "normal lung fields with no abnormality",
+        "atelectasis with volume loss",
+        "tuberculosis with cavitary lesion",
+        "pulmonary edema with perihilar haziness",
+        "hilar lymphadenopathy",
+        "rib fracture",
+        "mediastinal widening"
+    ],
+    "ct": [
+        "pulmonary embolism with filling defect",
+        "ground glass opacity",
+        "solid mass or nodule",
+        "lymphadenopathy",
+        "pleural effusion",
+        "consolidation",
+        "bronchiectasis with airway dilation",
+        "emphysema with hyperinflation",
+        "aortic aneurysm",
+        "normal thoracic anatomy"
+    ],
+    "mri": [
+        "mass or tumor with contrast enhancement",
+        "edema or inflammation",
+        "ischemic changes or infarction",
+        "hemorrhage",
+        "disc herniation or spinal stenosis",
+        "joint effusion",
+        "ligament or tendon tear",
+        "normal anatomy without abnormality",
+        "demyelinating lesion",
+        "abscess with rim enhancement"
+    ],
+    "ultrasound": [
+        "pleural effusion with anechoic collection",
+        "gallstones within gallbladder",
+        "hepatic mass or lesion",
+        "ascites with free fluid",
+        "renal calculus or hydronephrosis",
+        "deep vein thrombosis",
+        "normal organ parenchyma",
+        "pericardial effusion",
+        "ovarian cyst or mass",
+        "thyroid nodule"
+    ],
+    "fundus": [
+        "diabetic retinopathy with microaneurysms",
+        "macular edema",
+        "retinal hemorrhage",
+        "optic disc edema or papilledema",
+        "drusen consistent with age-related macular degeneration",
+        "retinal detachment",
+        "glaucomatous optic disc cupping",
+        "normal retinal vasculature",
+        "cotton wool spots",
+        "hypertensive retinopathy"
+    ],
+    "dermatology": [
+        "melanoma with irregular borders and pigmentation",
+        "basal cell carcinoma",
+        "squamous cell carcinoma",
+        "benign nevus or mole",
+        "dermatitis or eczema with erythema",
+        "psoriasis with silvery scales",
+        "actinic keratosis",
+        "seborrheic keratosis",
+        "fungal infection",
+        "normal skin without lesion"
+    ],
+    "histopathology": [
+        "malignant cells with nuclear pleomorphism",
+        "benign tissue with normal cellular architecture",
+        "inflammatory infiltrate",
+        "necrosis",
+        "fibrosis with collagen deposition",
+        "granulomatous inflammation",
+        "dysplasia",
+        "adenocarcinoma glandular pattern",
+        "squamous cell carcinoma with keratin pearls",
+        "lymphoid tissue with reactive changes"
+    ],
+    "pet": [
+        "hypermetabolic focus suggesting malignancy",
+        "diffuse uptake consistent with inflammation",
+        "normal physiological uptake",
+        "metastatic disease with multiple foci",
+        "lymph node uptake",
+        "bone marrow uptake",
+        "hepatic focal uptake",
+        "brain hypometabolism",
+        "cardiac viability defect",
+        "infection focus"
+    ],
+    "mammography": [
+        "spiculated mass suspicious for malignancy",
+        "well-circumscribed benign-appearing mass",
+        "microcalcifications in clustered distribution",
+        "architectural distortion",
+        "asymmetric density",
+        "axillary lymphadenopathy",
+        "skin thickening",
+        "normal breast parenchyma",
+        "fat necrosis",
+        "intramammary lymph node"
+    ],
+    "endoscopy": [
+        "polyp or polypoid lesion",
+        "ulceration with mucosal defect",
+        "erythematous or inflamed mucosa",
+        "mass or tumor",
+        "stricture or narrowing",
+        "varices",
+        "normal mucosal appearance",
+        "bleeding or active hemorrhage",
+        "Barrett esophagus with columnar epithelium",
+        "diverticulum"
+    ],
+    "other": [
+        "abnormality or lesion",
+        "normal anatomy",
+        "mass or tumor",
+        "inflammation or infection",
+        "fracture or bone abnormality",
+        "fluid collection",
+        "calcification",
+        "vascular abnormality"
+    ]
+}
