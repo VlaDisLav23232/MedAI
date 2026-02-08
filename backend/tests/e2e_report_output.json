@@ -1,133 +1,107 @@
 {
-    "report_id": "RPT-77AE4B48",
+    "report_id": "RPT-B6AD64DD",
     "encounter_id": "ENC-E2E-001",
-    "patient_id": "PT-43D940CA",
-    "diagnosis": "The patient presents with symptoms, physical exam findings, and laboratory results highly suggestive of Community-Acquired Pneumonia (CAP), likely bacterial, superimposed on an acute exacerbation of COPD. The elevated inflammatory markers (WBC, CRP, Procalcitonin) support a bacterial infection. While the history of smoking, weight loss, and asbestos exposure raises concern for underlying malignancy (lung cancer, mesothelioma), the acute presentation is most consistent with an infectious process. The patient's COPD and diabetes are relevant comorbidities.",
-    "confidence": 0.85,
-    "evidence_summary": "3-week progressive dyspnea, productive cough with yellowish sputum, low-grade fever (37.8\u00b0C), Weight loss of 4kg over past month, COPD (GOLD stage II), Hypertension, Type 2 DM, Current smoker, 40-pack-year, Prior hospitalisation: Pneumonia (2024), COPD exacerbation (2023) | decreased breath sounds right lower lobe with dullness to percussion | RR 22, SpO2 93% on room air | WBC: 14.2 \u00d710\u2079/L (H), CRP: 85 mg/L (H), Procalcitonin: 0.8 ng/mL (H)",
-    "timeline_impact": "No prior medical records found for patient PT-43D940CA. This is a new patient or records have not been migrated.",
-    "plan": [
-        "Initiate empiric antibiotic therapy for CAP, considering penicillin allergy (e.g., macrolide, respiratory fluoroquinolone, or doxycycline).",
-        "Administer supplemental oxygen to maintain SpO2 >90%.",
-        "Optimize COPD management with inhaled bronchodilators (SABA/SAMA).",
-        "Consider systemic corticosteroids for COPD exacerbation.",
-        "Obtain chest X-ray or CT scan to confirm pneumonia, assess severity, and rule out complications.",
-        "Monitor respiratory status, oxygenation, and response to treatment.",
-        "Follow up to assess clinical improvement and investigate persistent weight loss if necessary.",
-        "Review and optimize diabetes management (HbA1c is elevated).",
-        "Smoking cessation counseling."
-    ],
+    "patient_id": "PT-F3B783E1",
+    "diagnosis": "```json\n{\"reasoning_chain\": [{\"step\": 1, \"thought\": \"The patient presents with respiratory symptoms (RR 22, SpO2 93% on RA) and imaging findings (RUL consolidation/infiltrate, possible LUL infiltrate) suggestive of pneumonia. Given his history of COPD, smoking, and recent hospitalization for pneumonia, this is a likely diagnosis. However, the significant weight loss (4kg in a month) raises concern for an underlying malignancy, particularly lung cancer, given his smoking history and asbestos expo",
+    "confidence": 0.5,
+    "confidence_method": "model_self_reported",
+    "evidence_summary": "",
+    "timeline_impact": "No prior medical records found for patient PT-F3B783E1. This is a new patient or records have not been migrated.",
+    "plan": [],
     "findings": [
         {
-            "finding": "Right upper lobe and right lower lobe infiltrates",
-            "confidence": 0.95,
-            "explanation": "There are areas of increased density in the right upper and lower lobes, which could represent consolidation, edema, or other inflammatory processes. The infiltrates are more prominent on the right side.",
+            "finding": "Right upper lobe consolidation/infiltrate",
+            "confidence": 0.8,
+            "explanation": "There is increased opacity in the right upper lobe, suggestive of consolidation or infiltrate. This is consistent with the patient's symptoms and the previous chest X-ray findings.",
             "severity": "moderate",
-            "region_bbox": [
-                100,
-                100,
-                400,
-                400
-            ],
-            "metadata": {}
+            "region_bbox": null,
+            "metadata": {
+                "sequence_fluency_score": 0.9091,
+                "model_self_reported_confidence": 0.8,
+                "confidence_note": "confidence is model self-reported (not calibrated); sequence_fluency_score is token-level predictability (not clinical accuracy)"
+            }
+        },
+        {
+            "finding": "Possible mild left upper lobe infiltrate",
+            "confidence": 0.6,
+            "explanation": "There is some increased opacity in the left upper lobe, which could represent an infiltrate. This is less clear than the right upper lobe finding.",
+            "severity": "mild",
+            "region_bbox": null,
+            "metadata": {
+                "sequence_fluency_score": 0.9091,
+                "model_self_reported_confidence": 0.6,
+                "confidence_note": "confidence is model self-reported (not calibrated); sequence_fluency_score is token-level predictability (not clinical accuracy)"
+            }
         },
         {
             "finding": "Cardiomegaly",
-            "confidence": 0.85,
-            "explanation": "The heart appears enlarged, which could be due to various factors including hypertension, cardiomyopathy, or fluid overload.",
+            "confidence": 0.9,
+            "explanation": "The heart appears enlarged, which could be due to various factors including hypertension, heart failure, or cardiomyopathy.",
             "severity": "mild",
-            "region_bbox": [
-                100,
-                150,
-                300,
-                250
-            ],
-            "metadata": {}
-        },
-        {
-            "finding": "Possible mild pulmonary edema",
-            "confidence": 0.75,
-            "explanation": "There is some increased opacity in the lung fields, which could be consistent with mild pulmonary edema. This is more apparent in the right lung.",
-            "severity": "mild",
-            "region_bbox": [
-                100,
-                100,
-                400,
-                400
-            ],
-            "metadata": {}
+            "region_bbox": null,
+            "metadata": {
+                "sequence_fluency_score": 0.9091,
+                "model_self_reported_confidence": 0.9,
+                "confidence_note": "confidence is model self-reported (not calibrated); sequence_fluency_score is token-level predictability (not clinical accuracy)"
+            }
         }
     ],
     "reasoning_trace": [
         {
             "step": 1,
-            "thought": "Analyze the patient's presenting symptoms: 3-week progressive dyspnea, productive cough (yellowish sputum), low-grade fever (37.8\u00b0C), and weight loss (4kg). These symptoms suggest an infectious or inflammatory process, potentially involving the respiratory system."
-        },
-        {
-            "step": 2,
-            "thought": "Review the patient's medical history: COPD (GOLD stage II), Hypertension, Type 2 DM. These comorbidities increase the risk for respiratory infections and complications. The history of prior pneumonia and COPD exacerbation is significant."
-        },
-        {
-            "step": 3,
-            "thought": "Consider the patient's social history: Current smoker (40-pack-year), former construction worker (asbestos exposure). Smoking is a major risk factor for COPD and lung cancer. Asbestos exposure increases the risk of lung cancer and mesothelioma."
-        },
-        {
-            "step": 4,
-            "thought": "Evaluate the physical exam findings: Decreased breath sounds and dullness to percussion in the right lower lobe suggest consolidation or effusion in that area."
-        },
-        {
-            "step": 5,
-            "thought": "Interpret the vital signs: BP 135/85 (controlled HTN), HR 92 (mild tachycardia), RR 22 (tachypnea), SpO2 93% on room air (mild hypoxemia). These findings are consistent with a respiratory illness."
-        },
-        {
-            "step": 6,
-            "thought": "Analyze the lab results: Elevated WBC (14.2), CRP (85), and Procalcitonin (0.8) strongly indicate an acute bacterial infection. Low Hemoglobin (12.1) could be anemia of chronic disease or related to the current illness. Normal Creatinine (1.1) suggests preserved renal function. Elevated HbA1c (7.2%) indicates suboptimal diabetes control."
-        },
-        {
-            "step": 7,
-            "thought": "Synthesize the information: The patient presents with symptoms, signs, and lab findings highly suggestive of a bacterial pneumonia, likely a COPD exacerbation triggered by infection. The weight loss and smoking history raise concern for an underlying malignancy, although the acute presentation points primarily towards infection. The asbestos exposure history is also relevant for long-term risk but less likely to explain the acute presentation."
-        },
-        {
-            "step": 8,
-            "thought": "Formulate a differential diagnosis: 1. Community-Acquired Pneumonia (CAP) - most likely given acute symptoms, fever, productive cough, focal lung findings, and elevated inflammatory markers (WBC, CRP, Procalcitonin). 2. COPD Exacerbation (likely infectious trigger) - consistent with history, dyspnea, cough, and hypoxemia. 3. Lung Cancer - possible given smoking history, weight loss, and chronic symptoms, but less likely to explain the acute infectious picture. 4. Pulmonary Embolism - less likely given fever and productive cough, but dyspnea and hypoxemia warrant consideration. 5. Heart Failure Exacerbation - less likely given focal lung findings and lack of typical HF signs (e.g., JVD, edema). 6. Mesothelioma - possible given asbestos exposure, but typically presents more insidiously."
-        },
-        {
-            "step": 9,
-            "thought": "Prioritize the diagnosis: Based on the acute presentation, fever, productive cough, focal lung findings, and significantly elevated inflammatory markers (especially procalcitonin), Community-Acquired Pneumonia (CAP) is the most likely diagnosis, potentially superimposed on a COPD exacerbation."
-        },
-        {
-            "step": 10,
-            "thought": "Develop a treatment plan: Address the likely bacterial pneumonia with appropriate antibiotics. Manage the COPD exacerbation with bronchodilators and possibly systemic corticosteroids. Provide supportive care including oxygen therapy if needed. Consider further investigation for underlying malignancy given the weight loss and smoking history, especially if the patient does not respond promptly to treatment."
-        },
-        {
-            "step": 11,
-            "thought": "Consider contraindications: Penicillin allergy noted. Avoid penicillin-based antibiotics. Assess renal function before prescribing certain antibiotics."
-        },
-        {
-            "step": 12,
-            "thought": "Refine the assessment: The patient has a high probability of Community-Acquired Pneumonia, likely bacterial, superimposed on a COPD exacerbation. The elevated inflammatory markers support a bacterial etiology. The weight loss warrants further investigation after the acute illness resolves."
-        },
-        {
-            "step": 13,
-            "thought": "Finalize plan suggestions: Initiate empiric antibiotics covering common CAP pathogens (considering penicillin allergy). Optimize COPD management. Monitor respiratory status and oxygenation. Consider imaging (CXR or CT) to confirm pneumonia and assess for complications or underlying pathology. Plan for follow-up to assess response and investigate weight loss if persistent."
+            "thought": "```json\n{\"reasoning_chain\": [{\"step\": 1, \"thought\": \"The patient presents with respiratory symptoms (RR 22, SpO2 93% on RA) and imaging findings (RUL consolidation/infiltrate, possible LUL infiltrate) suggestive of pneumonia. Given his history of COPD, smoking, and recent hospitalization for pneumonia, this is a likely diagnosis. However, the significant weight loss (4kg in a month) raises concern for an underlying malignancy, particularly lung cancer, given his smoking history and asbestos exposure. Cardiomegaly is noted but doesn't directly explain the acute respiratory findings or weight loss. Hypertension and Type 2 DM are chronic conditions that need ongoing management but are less relevant to the acute presentation. The penicillin allergy is important for antibiotic selection.\"}, {\"step\": 2, \"thought\": \"Differential diagnoses include: 1. Community-acquired pneumonia (CAP) - supported by consolidation, RR, SpO2. 2. COPD exacerbation - possible, but consolidation points more toward"
         }
     ],
     "judge_verdict": {
-        "verdict": "consensus",
-        "confidence": 0.5,
-        "reasoning": "Judge evaluation encountered a parsing error: Expecting value: line 1 column 1 (char 0). Defaulting to consensus with low confidence.",
-        "contradictions": [],
-        "low_confidence_items": [
-            "Judge output could not be parsed"
+        "verdict": "conflict",
+        "confidence": 0.75,
+        "reasoning": "Multiple significant conflicts detected: (1) Image analysis identifies RIGHT UPPER LOBE consolidation, but physical exam shows RIGHT LOWER LOBE findings (dullness/decreased breath sounds) - anatomical mismatch between imaging and clinical exam. (2) Text reasoning output is severely truncated/malformed with incomplete JSON and cut-off sentences, confidence only 0.5, preventing proper assessment of clinical reasoning. (3) Synthesis mentions labs (WBC 14.2, CRP 85, Procalcitonin 0.8, Hgb 12.1) and COPD/asbestos history that don't appear in provided case context - potential hallucination or data inconsistency. (4) Weight loss of 4kg raises malignancy concern but image analysis rates cardiomegaly at 0.9 confidence while consolidation only 0.8, yet synthesis prioritizes infection over cardiac etiology without clear justification. (5) No historical records found, limiting ability to assess timeline consistency. Text reasoning tool produced unreliable output requiring re-run.",
+        "contradictions": [
+            "Image analysis shows right upper lobe consolidation but physical exam documents right lower lobe findings (anatomical discrepancy)",
+            "Synthesis references laboratory values and medical history (COPD, asbestos exposure, construction work, penicillin allergy) not present in provided case context",
+            "Text reasoning output is malformed/truncated with only 0.5 confidence, incomplete reasoning chain"
         ],
-        "missing_context": [],
-        "requery_tools": []
+        "low_confidence_items": [
+            "Text reasoning overall confidence: 0.5 (significantly below threshold)",
+            "Possible left upper lobe infiltrate: 0.6 confidence (borderline threshold)",
+            "Text reasoning tool produced incomplete/corrupted JSON output"
+        ],
+        "missing_context": [
+            "Laboratory results referenced in synthesis (WBC, CRP, Procalcitonin, Hemoglobin) not provided in case context",
+            "Complete past medical history (COPD diagnosis, prior hospitalizations mentioned in text reasoning)",
+            "Occupational history (asbestos exposure) referenced but not in original case",
+            "Medication list (Tiotropium mentioned in synthesis)",
+            "Documented drug allergies (penicillin allergy) not in original context"
+        ],
+        "requery_tools": [
+            "text_reasoning",
+            "image_analysis"
+        ]
     },
     "approval_status": "pending",
-    "created_at": "2026-02-07T22:45:15.691549",
+    "created_at": "2026-02-08T12:17:20.128102",
     "heatmap_urls": [],
     "specialist_summaries": {
-        "history_search": "No prior medical records found for patient PT-43D940CA. This is a new patient or records have not been migrated.",
-        "text_reasoning": "The patient presents with symptoms, physical exam findings, and laboratory results highly suggestive of Community-Acquired Pneumonia (CAP), likely bacterial, superimposed on an acute exacerbation of COPD. The elevated inflammatory markers (WBC, CRP, Procalcitonin) support a bacterial infection. While the history of smoking, weight loss, and asbestos exposure raises concern for underlying malignancy (lung cancer, mesothelioma), the acute presentation is most consistent with an infectious process. The patient's COPD and diabetes are relevant comorbidities."
+        "history_search": "No prior medical records found for patient PT-F3B783E1. This is a new patient or records have not been migrated.",
+        "text_reasoning": "```json\n{\"reasoning_chain\": [{\"step\": 1, \"thought\": \"The patient presents with respiratory symptoms (RR 22, SpO2 93% on RA) and imaging findings (RUL consolidation/infiltrate, possible LUL infiltrate) suggestive of pneumonia. Given his history of COPD, smoking, and recent hospitalization for pneumonia, this is a likely diagnosis. However, the significant weight loss (4kg in a month) raises concern for an underlying malignancy, particularly lung cancer, given his smoking history and asbestos expo"
+    },
+    "pipeline_metrics": {
+        "tools_s": 347.2,
+        "judge_s": 128.2,
+        "report_s": 0.0,
+        "total_s": 475.4,
+        "tool_timings": {
+            "history_search": 0.0,
+            "image_analysis": 38.66,
+            "text_reasoning": 97.19
+        },
+        "requery_cycles": 2,
+        "tools_called": [
+            "history_search",
+            "image_analysis",
+            "text_reasoning",
+            "_synthesis"
+        ],
+        "tools_failed": []
     }
 }

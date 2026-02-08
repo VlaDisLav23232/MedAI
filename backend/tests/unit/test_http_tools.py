@@ -61,7 +61,6 @@ class TestHttpImageAnalysisTool:
                             "confidence": 0.92,
                             "explanation": "Dense opacity right lower zone",
                             "severity": "moderate",
-                            "region_bbox": [100, 200, 300, 400],
                         }
                     ],
                     "attention_heatmap_url": "/heatmaps/001.png",
@@ -83,7 +82,7 @@ class TestHttpImageAnalysisTool:
         assert result.findings[0].finding == "Consolidation in RLL"
         assert result.findings[0].confidence == 0.92
         assert result.findings[0].severity == Severity.MODERATE
-        assert result.findings[0].region_bbox == [100, 200, 300, 400]
+        assert result.findings[0].region_bbox is None  # No longer populated by image tool
         assert result.attention_heatmap_url == "/heatmaps/001.png"
         assert "pneumonia" in result.differential_diagnoses
 
@@ -97,6 +96,26 @@ class TestHttpImageAnalysisTool:
         assert isinstance(result, ImageAnalysisOutput)
         assert result.modality_detected == Modality.CT
         assert result.findings == []
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_modality_normalization(self, tool):
+        """Model returns 'chest x-ray' which is not a valid Modality enum value."""
+        respx.post(f"{MOCK_ENDPOINT}").mock(
+            return_value=httpx.Response(200, json={"modality_detected": "chest x-ray", "findings": []})
+        )
+        result = await tool.execute(image_url="http://images/cxr.png")
+        assert result.modality_detected == Modality.XRAY  # normalized, not crash
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_unknown_modality_falls_back(self, tool):
+        """Completely unknown modality falls back to OTHER."""
+        respx.post(f"{MOCK_ENDPOINT}").mock(
+            return_value=httpx.Response(200, json={"modality_detected": "quantum_scan_3000", "findings": []})
+        )
+        result = await tool.execute(image_url="http://images/q.png")
+        assert result.modality_detected == Modality.OTHER
 
     def test_interface_compliance(self, tool):
         assert tool.name == ToolName.IMAGE_ANALYSIS

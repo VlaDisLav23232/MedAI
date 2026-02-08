@@ -159,13 +159,13 @@ class TestPatientCreate:
 class TestPatientTimeline:
     @pytest.mark.asyncio
     async def test_timeline_for_demo_patient(self, client):
-        """Maria Ivanova has 3 seed timeline events."""
+        """Maria Ivanova has 9 seed timeline events (rich multi-visit history)."""
         resp = await client.get("/api/v1/patients/PT-DEMO0001/timeline")
         assert resp.status_code == 200
         data = resp.json()
         assert data["patient_id"] == "PT-DEMO0001"
-        assert data["count"] == 3
-        assert len(data["events"]) == 3
+        assert data["count"] == 9
+        assert len(data["events"]) == 9
 
     @pytest.mark.asyncio
     async def test_timeline_sorted_newest_first(self, client):
@@ -195,9 +195,9 @@ class TestPatientTimeline:
         r2 = await client.get("/api/v1/patients/PT-DEMO0002/timeline")
         r3 = await client.get("/api/v1/patients/PT-DEMO0003/timeline")
 
-        assert r1.json()["count"] == 3
-        assert r2.json()["count"] == 3
-        assert r3.json()["count"] == 2
+        assert r1.json()["count"] == 9
+        assert r2.json()["count"] == 7
+        assert r3.json()["count"] == 7
 
 
 # ═══════════════════════════════════════════════════════════════

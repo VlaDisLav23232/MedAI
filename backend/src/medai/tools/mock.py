@@ -41,9 +41,9 @@ class MockImageAnalysisTool(BaseTool):
     def description(self) -> str:
         return (
             "Analyze a medical image (X-ray, CT, MRI, etc.) and return "
-            "structured findings with confidence scores, severity levels, "
-            "and region bounding boxes. Supports chest X-ray, GI tract MRI, "
-            "dermatology, ophthalmology, and histopathology images."
+            "structured findings with confidence scores and severity levels. "
+            "Supports chest X-ray, GI tract MRI, dermatology, ophthalmology, "
+            "and histopathology images."
         )
 
     @property
@@ -66,6 +66,7 @@ class MockImageAnalysisTool(BaseTool):
                 },
             },
             "required": ["image_url"],
+            "additionalProperties": False,
         }
 
     async def execute(self, **kwargs: Any) -> ImageAnalysisOutput:
@@ -80,14 +81,12 @@ class MockImageAnalysisTool(BaseTool):
                         "consistent with pneumonia. No pleural effusion seen."
                     ),
                     severity=Severity.MODERATE,
-                    region_bbox=[120, 340, 280, 480],
                 ),
                 Finding(
                     finding="Mild cardiomegaly",
                     confidence=0.72,
                     explanation="Cardiothoracic ratio slightly above 0.5, suggesting mild enlargement.",
                     severity=Severity.MILD,
-                    region_bbox=[200, 150, 400, 400],
                 ),
             ],
             attention_heatmap_url="/api/v1/artifacts/mock-heatmap-001/heatmap.png",
@@ -135,6 +134,7 @@ class MockTextReasoningTool(BaseTool):
                 },
             },
             "required": ["clinical_context"],
+            "additionalProperties": False,
         }
 
     async def execute(self, **kwargs: Any) -> TextReasoningOutput:
@@ -223,6 +223,7 @@ class MockAudioAnalysisTool(BaseTool):
                 },
             },
             "required": ["audio_url"],
+            "additionalProperties": False,
         }
 
     async def execute(self, **kwargs: Any) -> AudioAnalysisOutput:
@@ -275,6 +276,7 @@ class MockHistorySearchTool(BaseTool):
                 },
             },
             "required": ["patient_id", "query"],
+            "additionalProperties": False,
         }
 
     async def execute(self, **kwargs: Any) -> HistorySearchOutput:

@@ -1,8 +1,11 @@
-"""Local (in-memory) tool implementations.
+"""Local (in-memory) tool implementations with vector-based retrieval.
 
 These tools operate on application repositories directly — no external
 HTTP calls needed. They provide the same BaseTool interface as HTTP
 and mock tools so they can be registered in the ToolRegistry.
+
+History search uses TF-IDF vectorization with cosine similarity
+for semantic-aware retrieval over the patient timeline.
 """
 
 from __future__ import annotations
@@ -11,6 +14,8 @@ from datetime import datetime
 from typing import Any
 
 import structlog
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 from medai.domain.entities import (
     HistoryRecord,
@@ -24,16 +29,25 @@ logger = structlog.get_logger()
 
 
 class LocalHistorySearchTool(BaseTool):
-    """Search patient history from the in-memory timeline repository.
+    """Search patient history using TF-IDF vector similarity.
 
     Unlike HttpHistorySearchTool (which calls an external RAG endpoint),
-    this implementation reads directly from our TimelineRepository.
-    For the hackathon prototype this gives instant, reliable results.
-    In production this would be swapped for a vector-search backed tool.
+    this implementation reads directly from our TimelineRepository and
+    uses TF-IDF + cosine similarity for semantic-aware retrieval.
+
+    Architecture note: TF-IDF is a lightweight baseline. In production,
+    swap for dense embeddings (MedCPT, PubMedBERT, or sentence-transformers)
+    with FAISS/ChromaDB for sub-millisecond retrieval at scale.
     """
 
     def __init__(self, timeline_repo: BaseTimelineRepository) -> None:
         self._repo = timeline_repo
+        self._vectorizer = TfidfVectorizer(
+            stop_words="english",
+            ngram_range=(1, 2),  # unigrams + bigrams for medical terms
+            max_features=5000,
+            sublinear_tf=True,  # logarithmic TF scaling
+        )
 
     @property
     def name(self) -> ToolName:
@@ -67,6 +81,7 @@ class LocalHistorySearchTool(BaseTool):
                 },
             },
             "required": ["patient_id", "query"],
+            "additionalProperties": False,
         }
 
     async def execute(self, **kwargs: Any) -> HistorySearchOutput:
@@ -94,49 +109,71 @@ class LocalHistorySearchTool(BaseTool):
                 ),
             )
 
-        # Convert timeline events to HistoryRecords
-        # Simple keyword-based relevance scoring (production would use embeddings)
-        query_lower = query.lower()
-        query_words = set(query_lower.split())
+        # ── TF-IDF Vector Similarity Retrieval ────────────
+        # Build document corpus from timeline events
+        event_texts = [
+            f"{event.event_type.value} {event.summary} "
+            f"{' '.join(str(v) for v in event.metadata.values())}"
+            for event in events
+        ]
 
-        scored_records: list[tuple[float, HistoryRecord]] = []
-        for event in events[:max_results]:
-            # Simple term-overlap similarity
-            event_text = f"{event.summary} {event.event_type.value}".lower()
-            event_words = set(event_text.split())
-            overlap = len(query_words & event_words)
-            score = min(0.95, 0.3 + (overlap * 0.15))  # base 0.3 + boost per match
+        # Fit TF-IDF on corpus + query together for shared vocabulary
+        all_texts = event_texts + [query]
+        try:
+            tfidf_matrix = self._vectorizer.fit_transform(all_texts)
+
+            # Query is the last vector; events are all others
+            query_vector = tfidf_matrix[-1:]
+            event_vectors = tfidf_matrix[:-1]
+
+            # Compute cosine similarity between query and all events
+            similarities = cosine_similarity(query_vector, event_vectors).flatten()
+        except ValueError:
+            # Fallback if vectorization fails (empty vocab, etc.)
+            logger.warning("tfidf_fallback", reason="vectorization failed")
+            similarities = [0.3] * len(events)
+
+        # Build scored records
+        scored_records: list[tuple[float, HistoryRecord, TimelineEvent]] = []
+        for i, (event, sim_score) in enumerate(zip(events, similarities)):
+            # Normalize to 0-1 range with a base relevance boost
+            score = min(0.99, float(sim_score) * 0.7 + 0.3)
 
             record = HistoryRecord(
                 date=event.date,
                 record_type=event.event_type.value,
                 summary=event.summary,
-                similarity_score=score,
+                similarity_score=round(score, 3),
                 clinical_relevance=(
-                    f"Prior {event.event_type.value} record from "
+                    f"Prior {event.event_type.value} from "
                     f"{event.date.strftime('%Y-%m-%d')}: {event.summary[:120]}"
                 ),
             )
-            scored_records.append((score, record))
+            scored_records.append((score, record, event))
 
-        # Sort by score descending, take top N
+        # Sort by similarity descending, take top N
         scored_records.sort(key=lambda x: x[0], reverse=True)
-        records = [r for _, r in scored_records[:max_results]]
+        records = [r for _, r, _ in scored_records[:max_results]]
 
-        # Build timeline narrative
+        # Build timeline narrative from most relevant events
+        top_events = scored_records[:5]
         event_summaries = [
-            f"- [{e.date.strftime('%Y-%m-%d')}] {e.event_type.value}: {e.summary}"
-            for e in events[:5]
+            f"- [{ev.date.strftime('%Y-%m-%d')}] {ev.event_type.value}: "
+            f"{ev.summary[:150]} (relevance: {score:.2f})"
+            for score, _, ev in top_events
         ]
         timeline_context = (
             f"Patient has {len(events)} prior timeline entries. "
-            f"Most recent records:\n" + "\n".join(event_summaries)
+            f"Top matches by TF-IDF similarity to query:\n"
+            + "\n".join(event_summaries)
         )
 
         logger.info(
             "history_search_complete",
             patient_id=patient_id,
             records_found=len(records),
+            top_similarity=round(scored_records[0][0], 3) if scored_records else 0,
+            method="tfidf_cosine",
         )
 
         return HistorySearchOutput(

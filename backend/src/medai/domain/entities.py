@@ -2,6 +2,14 @@
 
 These are the immutable contracts of the system.
 All tools, services and API routes operate on these types.
+
+FRONTEND HANDOFF NOTES:
+- Every field has a type and description — use these for UI rendering.
+- Enums are exhaustive — switch on them for UI state.
+- InferenceMetadata carries model provenance (what model, what settings).
+- PipelineMetrics carries timing (for performance dashboards).
+- Finding.confidence is NOT a calibrated probability — render with
+  a disclaimer tooltip in the UI.
 """
 
 from __future__ import annotations
@@ -31,12 +39,16 @@ class EncounterType(str, Enum):
     EMERGENCY = "emergency"
     IMAGING = "imaging"
     LAB = "lab"
+    PROCEDURE = "procedure"
+    REFERRAL = "referral"
+    TELEMEDICINE = "telemedicine"
 
 
 class EncounterStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    SCHEDULED = "scheduled"
 
 
 class TimelineEventType(str, Enum):
@@ -46,6 +58,11 @@ class TimelineEventType(str, Enum):
     AUDIO = "audio"
     AI_REPORT = "ai_report"
     NOTE = "note"
+    PROCEDURE = "procedure"
+    PRESCRIPTION = "prescription"
+    REFERRAL = "referral"
+    VITAL_SIGNS = "vital_signs"
+    DIAGNOSIS = "diagnosis"
 
 
 class ApprovalStatus(str, Enum):
@@ -71,6 +88,9 @@ class Modality(str, Enum):
     FUNDUS = "fundus"
     DERMATOLOGY = "dermatology"
     HISTOPATHOLOGY = "histopathology"
+    PET = "pet"
+    MAMMOGRAPHY = "mammography"
+    ENDOSCOPY = "endoscopy"
     OTHER = "other"
 
 
@@ -87,12 +107,75 @@ class ToolName(str, Enum):
     HISTORY_SEARCH = "history_search"
 
 
+class ConfidenceMethod(str, Enum):
+    """How a confidence value was produced — for UI transparency."""
+    MODEL_SELF_REPORTED = "model_self_reported"
+    LOGPROB_SEQUENCE = "logprob_sequence"
+    JUDGE_ASSESSMENT = "judge_assessment"
+    ENSEMBLE_AGREEMENT = "ensemble_agreement"
+    NOT_AVAILABLE = "not_available"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Inference Provenance
+# ═══════════════════════════════════════════════════════════════
+
+class InferenceMetadata(BaseModel):
+    """Provenance and statistics from a single model inference call.
+
+    This is REAL data from the inference server — not hallucinated.
+    Frontend should display this in a "Model Info" expandable section.
+
+    In production these fields come from:
+    - model_id: set in the Modal endpoint code (e.g. "google/medgemma-4b-it")
+    - temperature: generation config parameter passed to model.generate()
+    - token_count: len(generated_ids) after generation
+    - inference_time_ms: wall-clock time.monotonic() around model.generate()
+    - sequence_fluency_score: geometric mean of per-token log-probabilities
+      (measures how predictable each token was, NOT clinical accuracy)
+    """
+    model_id: str = Field(description="HuggingFace model identifier")
+    temperature: float = Field(description="Sampling temperature (0.0 = greedy)")
+    token_count: int = Field(ge=0, description="Number of tokens generated")
+    inference_time_ms: float = Field(ge=0, description="Wall-clock inference time in milliseconds")
+    sequence_fluency_score: float | None = Field(
+        default=None,
+        ge=0.0, le=1.0,
+        description=(
+            "Geometric mean of per-token log-probabilities. "
+            "Measures generation fluency, NOT clinical accuracy."
+        ),
+    )
+
+
+class PipelineMetrics(BaseModel):
+    """Timing and cost breakdown for the full analysis pipeline.
+
+    Frontend should display this in a "Performance" panel.
+    All times are wall-clock seconds.
+    """
+    tools_s: float = Field(description="Total time for all tool calls")
+    judge_s: float = Field(description="Total time for judge evaluation + requery cycles")
+    report_s: float = Field(description="Time for report assembly")
+    total_s: float = Field(description="End-to-end pipeline time")
+    tool_timings: dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-tool wall-clock time in seconds (e.g. {'image_analysis': 16.7})",
+    )
+    requery_cycles: int = Field(default=0, description="Number of judge requery cycles executed")
+    tools_called: list[str] = Field(default_factory=list, description="Tool names that were called")
+    tools_failed: list[str] = Field(default_factory=list, description="Tool names that errored")
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Core Entities
 # ═══════════════════════════════════════════════════════════════
 
 class Patient(BaseModel):
-    """Core patient record."""
+    """Core patient record.
+
+    In production: populated from EHR/FHIR integration (Helsi/eHealth API).
+    """
     id: str = Field(default_factory=lambda: f"PT-{uuid.uuid4().hex[:8].upper()}")
     name: str
     date_of_birth: date
@@ -112,14 +195,30 @@ class Encounter(BaseModel):
 
 
 class TimelineEvent(BaseModel):
-    """A single entry on the patient timeline."""
+    """A single entry on the patient timeline.
+
+    `metadata` is a structured dict whose keys depend on `event_type`:
+
+    In production this data comes from:
+    - EHR/FHIR integration: Observation, DiagnosticReport, Procedure resources
+    - Lab Information System (LIS): lab results with reference ranges
+    - Radiology Information System (RIS): imaging reports, DICOM metadata
+    - Manual entry by clinicians during consultations
+
+    Example metadata by event_type:
+        imaging: {"technique": "PA/Lateral", "kvp": 120, "report_id": "RAD-001"}
+        lab:     {"wbc": "14.8", "crp": "92", "units": {"wbc": "×10⁹/L"}, "flags": {"wbc": "H"}}
+        encounter: {"vitals": {"bp": "145/92", "hr": 98}, "icd10": ["J18.1"]}
+        procedure: {"cpt_code": "31622", "anesthesia": "conscious_sedation"}
+        prescription: {"drug": "Amoxicillin", "dose": "500mg", "frequency": "TID"}
+    """
     id: str = Field(default_factory=lambda: f"TL-{uuid.uuid4().hex[:8].upper()}")
     patient_id: str
     date: datetime
     event_type: TimelineEventType
     summary: str
-    source_id: str | None = None
-    source_type: str | None = None
+    source_id: str | None = Field(default=None, description="ID of the originating resource (encounter, report, etc.)")
+    source_type: str | None = Field(default=None, description="Type of source (e.g. 'fhir_observation', 'ris_report')")
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -130,21 +229,37 @@ class TimelineEvent(BaseModel):
 class Finding(BaseModel):
     """A single clinical finding from any specialist tool.
 
-    NOTE on `confidence`: This is the model's self-reported certainty,
-    NOT a calibrated probability. It should be treated as an ordinal
-    ranking (higher = model is more sure) rather than a true probability.
+    CONFIDENCE DISCLAIMER:
+      `confidence` is the model's self-reported certainty expressed as
+      text output (the model predicts what number a doctor would write).
+      It is NOT a calibrated probability. Treat it as an ordinal ranking
+      (higher = model is more sure) NOT as "X% chance of being correct".
 
-    NOTE on `region_bbox`: When present, these are approximate pixel
-    coordinates [x1, y1, x2, y2] generated by the VLM as text output.
-    They are NOT from an object detection or segmentation model and
-    should be treated as rough spatial hints, not precise localization.
+    NOTE on `region_bbox`: Reserved for future MedSigLIP/MedSAM
+    integration. Currently always None.
     """
     finding: str
-    confidence: float = Field(ge=0.0, le=1.0, description="Model self-reported certainty (NOT a calibrated probability)")
+    confidence: float = Field(
+        ge=0.0, le=1.0,
+        description=(
+            "Model self-reported certainty (NOT a calibrated probability). "
+            "Treat as ordinal ranking, not as P(correct)."
+        ),
+    )
     explanation: str
     severity: Severity = Severity.NONE
-    region_bbox: list[int] | None = Field(default=None, description="Approximate [x1,y1,x2,y2] pixel region — VLM-estimated, not from object detection")
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    region_bbox: list[int] | None = Field(
+        default=None,
+        description="Reserved for future segmentation model integration",
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Transparency metadata: sequence_fluency_score, "
+            "model_self_reported_confidence, confidence_note, "
+            "plus full InferenceMetadata when available."
+        ),
+    )
 
 
 class EvidenceCitation(BaseModel):
@@ -164,6 +279,7 @@ class ImageAnalysisOutput(BaseModel):
     embedding_id: str | None = None
     differential_diagnoses: list[str] = Field(default_factory=list)
     recommended_followup: list[str] = Field(default_factory=list)
+    inference: InferenceMetadata | None = Field(default=None, description="Model provenance and stats")
 
 
 class TextReasoningOutput(BaseModel):
@@ -175,6 +291,7 @@ class TextReasoningOutput(BaseModel):
     evidence_citations: list[EvidenceCitation] = Field(default_factory=list)
     plan_suggestions: list[str] = Field(default_factory=list)
     contraindication_flags: list[str] = Field(default_factory=list)
+    inference: InferenceMetadata | None = Field(default=None, description="Model provenance and stats")
 
 
 class AudioSegment(BaseModel):
@@ -193,6 +310,7 @@ class AudioAnalysisOutput(BaseModel):
     summary: str
     abnormal_segment_timestamps: list[float] = Field(default_factory=list)
     embedding_id: str | None = None
+    inference: InferenceMetadata | None = Field(default=None, description="Model provenance and stats")
 
 
 class HistoryRecord(BaseModel):
@@ -244,6 +362,10 @@ class FinalReport(BaseModel):
     patient_id: str
     diagnosis: str
     confidence: float = Field(ge=0.0, le=1.0)
+    confidence_method: ConfidenceMethod = Field(
+        default=ConfidenceMethod.MODEL_SELF_REPORTED,
+        description="How the top-level confidence was determined",
+    )
     evidence_summary: str
     timeline_impact: str
     plan: list[str]
@@ -254,3 +376,7 @@ class FinalReport(BaseModel):
     approval_status: ApprovalStatus = ApprovalStatus.PENDING
     created_at: datetime = Field(default_factory=datetime.utcnow)
     doctor_notes: str | None = None
+    pipeline_metrics: PipelineMetrics | None = Field(
+        default=None,
+        description="Timing and performance breakdown for the full pipeline",
+    )

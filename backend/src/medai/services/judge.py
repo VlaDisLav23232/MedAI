@@ -2,15 +2,19 @@
 
 Implements the Evaluator-Optimizer pattern from Anthropic's best practices.
 Checks for contradictions, low confidence, missing context, and guideline adherence.
+
+Uses Anthropic Structured Outputs (output_config with json_schema) for guaranteed
+valid JSON via constrained decoding — no manual parsing or fence stripping needed.
 """
 
 from __future__ import annotations
 
-import json
-from typing import Any
+from enum import Enum
+from typing import Any, Literal
 
 import structlog
-from anthropic import AsyncAnthropic
+from anthropic import AsyncAnthropic, transform_schema
+from pydantic import BaseModel, Field
 
 from medai.config import Settings
 from medai.domain.entities import (
@@ -23,6 +27,35 @@ from medai.domain.interfaces import BaseJudge
 from medai.domain.schemas import CaseAnalysisRequest
 
 logger = structlog.get_logger()
+
+
+# ── Structured Output Schema ──────────────────────────────
+# Pydantic model used by Anthropic's constrained decoding.
+# Maps 1:1 to JudgmentResult but uses simple types that the
+# JSON schema constrained decoder handles reliably.
+
+class JudgmentResponse(BaseModel):
+    """Schema for Claude's structured judge output.
+
+    This is the contract between the Judge prompt and the JSON
+    schema constrained decoder. Kept separate from JudgmentResult
+    (domain entity) so we can evolve them independently.
+    """
+    verdict: Literal["consensus", "conflict"]
+    confidence: float = Field(ge=0.0, le=1.0, description="How confident you are in the verdict")
+    reasoning: str = Field(description="Brief explanation of your judgment")
+    contradictions: list[str] = Field(default_factory=list, description="Contradictions found between specialist outputs")
+    low_confidence_items: list[str] = Field(default_factory=list, description="Items with confidence below threshold")
+    missing_context: list[str] = Field(default_factory=list, description="Missing information that would improve analysis")
+    requery_tools: list[Literal["image_analysis", "text_reasoning", "audio_analysis", "history_search"]] = Field(
+        default_factory=list,
+        description="Tool names to re-run if verdict is conflict",
+    )
+
+
+# Pre-compute the JSON schema once at module load
+_JUDGMENT_SCHEMA = transform_schema(JudgmentResponse)
+
 
 JUDGE_SYSTEM_PROMPT = """\
 You are a Senior Medical AI Judge. Your role is to evaluate the outputs of multiple \
@@ -38,28 +71,15 @@ You must evaluate:
 IMPORTANT: You are NOT diagnosing the patient. You are judging whether the specialist \
 tools agree with each other and whether the combined output is reliable enough to \
 present to the doctor.
-
-Respond with a JSON object matching this exact schema:
-{{
-    "verdict": "consensus" or "conflict",
-    "confidence": float between 0.0 and 1.0,
-    "reasoning": "Brief explanation of your judgment",
-    "contradictions": ["list of contradictions found, empty if none"],
-    "low_confidence_items": ["list of items below confidence threshold"],
-    "missing_context": ["list of missing information that would improve analysis"],
-    "requery_tools": ["tool names to re-run if verdict is conflict"]
-}}
-
-CRITICAL: Respond with ONLY the raw JSON object. Do NOT wrap it in markdown
-code fences (```). Do NOT add any text before or after the JSON.
 """
 
 
 class ClaudeJudge(BaseJudge):
-    """Judge Agent powered by Claude.
+    """Judge Agent powered by Claude with Structured Outputs.
 
-    Evaluates specialist tool outputs for consistency and reliability.
-    Returns CONSENSUS if all checks pass, CONFLICT if re-analysis is needed.
+    Uses Anthropic's `output_config` with `json_schema` for guaranteed
+    valid JSON via constrained decoding. No manual JSON parsing needed —
+    the API enforces the schema at generation time.
     """
 
     def __init__(self, client: AsyncAnthropic, settings: Settings) -> None:
@@ -71,8 +91,7 @@ class ClaudeJudge(BaseJudge):
         request: CaseAnalysisRequest,
         specialist_results: SpecialistResults,
     ) -> JudgmentResult:
-        """Evaluate specialist results using Claude as judge."""
-        # Serialize specialist results for Claude
+        """Evaluate specialist results using Claude as judge with structured output."""
         results_text = self._format_results(specialist_results)
 
         system_prompt = JUDGE_SYSTEM_PROMPT.format(
@@ -86,38 +105,39 @@ class ClaudeJudge(BaseJudge):
             f"Clinical Context: {request.clinical_context}\n\n"
             f"## Specialist Tool Results\n{results_text}\n\n"
             f"## Your Task\n"
-            f"Evaluate these results for consensus or conflict. "
-            f"Return your judgment as JSON."
+            f"Evaluate these results for consensus or conflict."
         )
 
         logger.info("judge_evaluating", patient_id=request.patient_id)
 
         try:
+            # Use Anthropic Structured Outputs — guaranteed valid JSON
             response = await self._client.messages.create(
                 model=self._settings.orchestrator_model,
                 max_tokens=self._settings.judge_max_tokens,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_message}],
+                output_config={
+                    "format": {
+                        "type": "json_schema",
+                        "schema": _JUDGMENT_SCHEMA,
+                    }
+                },
             )
 
-            # Parse Claude's response — strip markdown fences if present
-            response_text = response.content[0].text.strip()  # type: ignore
-            if response_text.startswith("```"):
-                # Remove ```json ... ``` wrapper
-                response_text = response_text.split("\n", 1)[1] if "\n" in response_text else response_text[3:]
-                response_text = response_text.rsplit("```", 1)[0].strip()
-            judgment_data = json.loads(response_text)
+            # Structured output guarantees valid JSON — parse directly
+            judgment = JudgmentResponse.model_validate_json(
+                response.content[0].text  # type: ignore
+            )
 
             result = JudgmentResult(
-                verdict=JudgeVerdict(judgment_data["verdict"]),
-                confidence=judgment_data.get("confidence", 0.5),
-                reasoning=judgment_data.get("reasoning", ""),
-                contradictions=judgment_data.get("contradictions", []),
-                low_confidence_items=judgment_data.get("low_confidence_items", []),
-                missing_context=judgment_data.get("missing_context", []),
-                requery_tools=[
-                    ToolName(t) for t in judgment_data.get("requery_tools", [])
-                ],
+                verdict=JudgeVerdict(judgment.verdict),
+                confidence=judgment.confidence,
+                reasoning=judgment.reasoning,
+                contradictions=judgment.contradictions,
+                low_confidence_items=judgment.low_confidence_items,
+                missing_context=judgment.missing_context,
+                requery_tools=[ToolName(t) for t in judgment.requery_tools],
             )
 
             logger.info(
@@ -127,14 +147,14 @@ class ClaudeJudge(BaseJudge):
             )
             return result
 
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.error("judge_parse_error", error=str(e))
-            # Fail-safe: if we can't parse judge output, default to consensus
-            # but with low confidence so the doctor knows to review carefully
+        except Exception as e:
+            logger.error("judge_evaluation_error", error=str(e))
+            # Fail-safe: if anything goes wrong, default to consensus
+            # with low confidence so the doctor knows to review carefully
             return JudgmentResult(
                 verdict=JudgeVerdict.CONSENSUS,
                 confidence=0.5,
-                reasoning=f"Judge evaluation encountered a parsing error: {e}. Defaulting to consensus with low confidence.",
+                reasoning=f"Judge evaluation error: {e}. Defaulting to consensus with low confidence.",
                 contradictions=[],
                 low_confidence_items=["Judge output could not be parsed"],
                 missing_context=[],

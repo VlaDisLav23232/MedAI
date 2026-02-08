@@ -8,12 +8,14 @@ Implements the Orchestrator-Workers pattern:
 5. REPORT: Generate final structured report
 
 Uses Anthropic's tool-use API with parallel tool calls.
+Structured logging tracks each phase with timing for demo observability.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import datetime
 from typing import Any
 
@@ -23,9 +25,11 @@ from anthropic.types import Message, ContentBlock, ToolUseBlock, TextBlock
 
 from medai.config import Settings
 from medai.domain.entities import (
+    ConfidenceMethod,
     Finding,
     FinalReport,
     JudgeVerdict,
+    PipelineMetrics,
     SpecialistResults,
     ToolName,
     ToolOutput,
@@ -49,8 +53,10 @@ RULES:
 2. Use image_analysis for any provided medical images.
 3. Use text_reasoning when patient history, lab results, or complex clinical questions are present.
 4. Use audio_analysis only when audio recordings are provided.
-5. You may call multiple tools in parallel.
-6. After receiving all tool results, synthesize a final diagnosis.
+5. You may call DIFFERENT tools in parallel (one image_analysis + one history_search, etc.).
+6. NEVER call the same tool more than once per turn. One call per tool name per iteration.
+7. Call text_reasoning ONCE with all available context — do NOT split into multiple calls.
+8. After receiving all tool results, synthesize a BRIEF final diagnosis (under 300 words).
 
 Be thorough but efficient. The doctor is waiting.
 """
@@ -76,12 +82,16 @@ class ClaudeOrchestrator(BaseOrchestrator):
         self._judge = judge
 
     async def analyze_case(self, request: CaseAnalysisRequest) -> FinalReport:
-        """Full case analysis pipeline."""
+        """Full case analysis pipeline with phase timing."""
+        pipeline_start = time.monotonic()
+        self._tool_timings: dict[str, float] = {}  # tool_name → elapsed_s
+
         logger.info(
-            "case_analysis_started",
+            "📋 PIPELINE_START",
             patient_id=request.patient_id,
             has_images=bool(request.image_urls),
             has_audio=bool(request.audio_urls),
+            phase="START",
         )
 
         # Build tool definitions for Claude
@@ -94,23 +104,32 @@ class ClaudeOrchestrator(BaseOrchestrator):
             tool_descriptions=self._format_tool_descriptions(),
         )
 
-        # ── Step 1-3: Let Claude decide tools and invoke them ──
+        # ── Phase 1-3: ROUTE → DISPATCH → COLLECT ──
+        t0 = time.monotonic()
+        logger.info("🔀 PHASE: ROUTE → DISPATCH → COLLECT", phase="TOOLS")
+
         specialist_results = await self._run_tool_loop(
             system_prompt=system_prompt,
             user_content=user_content,
             tool_definitions=tool_definitions,
         )
 
+        tools_elapsed = time.monotonic() - t0
         logger.info(
-            "tools_completed",
+            "✅ TOOLS_COMPLETE",
+            phase="TOOLS",
+            elapsed_s=round(tools_elapsed, 1),
             successful=list(specialist_results.results.keys()),
             errors=list(specialist_results.errors.keys()),
         )
 
-        # ── Step 4: Judge evaluates consensus ──
+        # ── Phase 4: JUDGE ──
+        t0 = time.monotonic()
+        logger.info("⚖️  PHASE: JUDGE", phase="JUDGE")
+
         judgment = await self._judge.evaluate(request, specialist_results)
 
-        # ── Step 4b: Re-query if conflict (up to max cycles) ──
+        # ── Phase 4b: Re-query if conflict ──
         cycle = 0
         while (
             judgment.verdict == JudgeVerdict.CONFLICT
@@ -118,7 +137,12 @@ class ClaudeOrchestrator(BaseOrchestrator):
             and cycle < self._settings.max_judgment_cycles
         ):
             cycle += 1
-            logger.info("requery_cycle", cycle=cycle, tools=judgment.requery_tools)
+            logger.info(
+                "🔄 REQUERY_CYCLE",
+                phase="JUDGE",
+                cycle=cycle,
+                tools=judgment.requery_tools,
+            )
 
             additional_results = await self.dispatch_tools(
                 tool_names=judgment.requery_tools,
@@ -127,20 +151,52 @@ class ClaudeOrchestrator(BaseOrchestrator):
                     for tool in judgment.requery_tools
                 },
             )
-            # Merge new results
             specialist_results.results.update(additional_results.results)
             specialist_results.errors.update(additional_results.errors)
 
             judgment = await self._judge.evaluate(request, specialist_results)
 
-        # ── Step 5: Generate final report ──
+        judge_elapsed = time.monotonic() - t0
+        logger.info(
+            "✅ JUDGE_COMPLETE",
+            phase="JUDGE",
+            elapsed_s=round(judge_elapsed, 1),
+            verdict=judgment.verdict.value,
+            confidence=judgment.confidence,
+            requery_cycles=cycle,
+        )
+
+        # ── Phase 5: REPORT ──
+        t0 = time.monotonic()
+        logger.info("📝 PHASE: REPORT", phase="REPORT")
+
         report = await self._generate_report(request, specialist_results, judgment)
 
+        report_elapsed = time.monotonic() - t0
+        total_elapsed = time.monotonic() - pipeline_start
+
+        # Build real pipeline metrics
+        metrics = PipelineMetrics(
+            tools_s=round(tools_elapsed, 1),
+            judge_s=round(judge_elapsed, 1),
+            report_s=round(report_elapsed, 1),
+            total_s=round(total_elapsed, 1),
+            tool_timings=dict(self._tool_timings),
+            requery_cycles=cycle,
+            tools_called=list(specialist_results.results.keys()),
+            tools_failed=list(specialist_results.errors.keys()),
+        )
+        report.pipeline_metrics = metrics
+
         logger.info(
-            "case_analysis_completed",
+            "🏁 PIPELINE_COMPLETE",
+            phase="DONE",
             report_id=report.id,
-            diagnosis=report.diagnosis,
+            diagnosis=report.diagnosis[:100],
             confidence=report.confidence,
+            findings_count=len(report.findings),
+            plan_items=len(report.plan),
+            timing=metrics.model_dump(),
         )
 
         return report
@@ -208,6 +264,16 @@ class ClaudeOrchestrator(BaseOrchestrator):
                 content_blocks=len(response.content),
             )
 
+            # ── Guard: max_tokens means Claude was cut off ──
+            if response.stop_reason == "max_tokens":
+                logger.warning(
+                    "⚠️ RESPONSE_TRUNCATED",
+                    phase="TOOLS",
+                    iteration=iteration,
+                    content_blocks=len(response.content),
+                )
+                # Still try to process any complete tool_use blocks below
+
             # If Claude is done (no more tool calls), break
             if response.stop_reason == "end_turn":
                 # Extract any final text as synthesis
@@ -221,11 +287,51 @@ class ClaudeOrchestrator(BaseOrchestrator):
             if not tool_calls:
                 break
 
+            # ── Deduplicate: keep only the FIRST call per tool name ──
+            # Claude API requires a tool_result for every tool_use ID.
+            # For duplicates, we execute the first and re-send its result
+            # for subsequent IDs of the same tool — no stubs, no fakes.
+            seen_tools: dict[str, ToolUseBlock] = {}  # name → first block
+            unique_calls: list[ToolUseBlock] = []
+            duplicate_map: dict[str, str] = {}  # dropped_id → first_id
+            for tc in tool_calls:
+                if tc.name not in seen_tools:
+                    seen_tools[tc.name] = tc
+                    unique_calls.append(tc)
+                else:
+                    duplicate_map[tc.id] = seen_tools[tc.name].id
+                    logger.warning(
+                        "🚫 DUPLICATE_TOOL_CALL_DROPPED",
+                        tool=tc.name,
+                        iteration=iteration,
+                        duplicate_of=seen_tools[tc.name].id,
+                    )
+            if duplicate_map:
+                logger.info(
+                    "🔧 TOOL_DEDUP",
+                    original=len(tool_calls),
+                    after_dedup=len(unique_calls),
+                    dropped=len(duplicate_map),
+                )
+
             # Add assistant's response to conversation
             messages.append({"role": "assistant", "content": response.content})  # type: ignore
 
-            # Execute all tool calls in parallel
-            tool_results = await self._execute_tool_calls(tool_calls, results)
+            # Execute only unique tool calls
+            tool_results = await self._execute_tool_calls(unique_calls, results)
+
+            # For duplicates, copy the real result from the first execution
+            # so Claude gets identical data — no stubs, no fakes.
+            first_id_to_content: dict[str, str] = {
+                tr["tool_use_id"]: tr["content"]
+                for tr in tool_results
+            }
+            for dropped_id, first_id in duplicate_map.items():
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": dropped_id,
+                    "content": first_id_to_content.get(first_id, "{}"),
+                })
 
             # Add tool results back to conversation
             messages.append({"role": "user", "content": tool_results})
@@ -237,21 +343,33 @@ class ClaudeOrchestrator(BaseOrchestrator):
         tool_calls: list[ToolUseBlock],
         results: SpecialistResults,
     ) -> list[dict[str, Any]]:
-        """Execute tool calls from Claude in parallel and format results for conversation."""
+        """Execute tool calls from Claude in parallel with per-tool timing."""
 
         async def _run_one(tool_call: ToolUseBlock) -> dict[str, Any]:
             tool_name_str = tool_call.name
             tool_input = tool_call.input  # type: ignore
+            t0 = time.monotonic()
 
-            logger.info("executing_tool", tool=tool_name_str, input_keys=list(tool_input.keys()) if isinstance(tool_input, dict) else [])
+            logger.info(
+                "🔧 TOOL_DISPATCH",
+                tool=tool_name_str,
+                input_keys=list(tool_input.keys()) if isinstance(tool_input, dict) else [],
+            )
 
             try:
                 tool_name = ToolName(tool_name_str)
                 tool = self._registry.get_required(tool_name)
                 output = await tool.execute(**tool_input if isinstance(tool_input, dict) else {})
 
-                # Store in results
+                elapsed = time.monotonic() - t0
                 results.results[tool_name_str] = output
+                self._tool_timings[tool_name_str] = round(elapsed, 2)
+
+                logger.info(
+                    "✅ TOOL_COMPLETE",
+                    tool=tool_name_str,
+                    elapsed_s=round(elapsed, 1),
+                )
 
                 content = output.model_dump_json() if hasattr(output, "model_dump_json") else json.dumps(output)
                 return {
@@ -261,7 +379,14 @@ class ClaudeOrchestrator(BaseOrchestrator):
                 }
 
             except Exception as e:
-                logger.error("tool_call_failed", tool=tool_name_str, error=str(e))
+                elapsed = time.monotonic() - t0
+                self._tool_timings[tool_name_str] = round(elapsed, 2)
+                logger.error(
+                    "❌ TOOL_FAILED",
+                    tool=tool_name_str,
+                    elapsed_s=round(elapsed, 1),
+                    error=str(e),
+                )
                 results.errors[tool_name_str] = str(e)
                 return {
                     "type": "tool_result",
@@ -323,6 +448,7 @@ class ClaudeOrchestrator(BaseOrchestrator):
             patient_id=request.patient_id,
             diagnosis=diagnosis,
             confidence=confidence,
+            confidence_method=ConfidenceMethod.MODEL_SELF_REPORTED,
             evidence_summary=evidence_summary,
             timeline_impact=timeline_impact,
             plan=plan,
@@ -380,6 +506,7 @@ class ClaudeOrchestrator(BaseOrchestrator):
         # Enrich with existing results for cross-referencing
         if tool == ToolName.IMAGE_ANALYSIS and request.image_urls:
             base_input["image_url"] = request.image_urls[0]
+            base_input["modality_hint"] = "xray"  # safe default; normalized in http.py
             # Add text findings for context
             text_result = existing_results.results.get(ToolName.TEXT_REASONING.value)
             if text_result and hasattr(text_result, "assessment"):
@@ -463,6 +590,7 @@ class MockOrchestrator(BaseOrchestrator):
             patient_id=request.patient_id,
             diagnosis=diagnosis,
             confidence=confidence,
+            confidence_method=ConfidenceMethod.MODEL_SELF_REPORTED,
             evidence_summary="Mock evidence summary",
             timeline_impact=timeline_impact,
             plan=plan,

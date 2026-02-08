@@ -63,14 +63,19 @@ class BaseTool(ABC):
         ...
 
     def to_claude_tool_definition(self) -> dict[str, Any]:
-        """Convert to Anthropic tool-use format.
+        """Convert to Anthropic tool-use format with strict validation.
 
-        This is the bridge between our tool system and Claude's API.
+        Uses `strict: true` so Claude validates tool inputs against the
+        JSON schema at generation time — no malformed tool calls.
         """
+        schema = self.input_schema.copy()
+        # Ensure additionalProperties is set for strict mode
+        schema.setdefault("additionalProperties", False)
         return {
             "name": self.name.value,
             "description": self.description,
-            "input_schema": self.input_schema,
+            "input_schema": schema,
+            "strict": True,
         }
 
 

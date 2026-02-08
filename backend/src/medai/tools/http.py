@@ -28,6 +28,7 @@ from medai.domain.entities import (
     HistoryRecord,
     HistorySearchOutput,
     ImageAnalysisOutput,
+    InferenceMetadata,
     Modality,
     Severity,
     TextReasoningOutput,
@@ -37,6 +38,68 @@ from medai.domain.entities import (
 from medai.domain.interfaces import BaseTool
 
 logger = structlog.get_logger()
+
+# ── Modality normalization ────────────────────────────────────────
+
+_MODALITY_ALIASES: dict[str, Modality] = {
+    "chest x-ray": Modality.XRAY,
+    "chest_xray": Modality.XRAY,
+    "chest xray": Modality.XRAY,
+    "x-ray": Modality.XRAY,
+    "x ray": Modality.XRAY,
+    "radiograph": Modality.XRAY,
+    "ct scan": Modality.CT,
+    "ct_scan": Modality.CT,
+    "computed tomography": Modality.CT,
+    "magnetic resonance": Modality.MRI,
+    "mri scan": Modality.MRI,
+    "ultrasound scan": Modality.ULTRASOUND,
+    "us": Modality.ULTRASOUND,
+    "sonography": Modality.ULTRASOUND,
+    "fundoscopy": Modality.FUNDUS,
+    "fundus photo": Modality.FUNDUS,
+    "retinal": Modality.FUNDUS,
+    "dermoscopy": Modality.DERMATOLOGY,
+    "skin": Modality.DERMATOLOGY,
+    "pathology": Modality.HISTOPATHOLOGY,
+    "biopsy": Modality.HISTOPATHOLOGY,
+    "histology": Modality.HISTOPATHOLOGY,
+}
+
+
+def _normalize_modality(raw: str) -> Modality:
+    """Normalize free-text modality strings to the Modality enum.
+
+    Handles common aliases like 'chest x-ray' → XRAY that models
+    may produce despite the enum constraint in the tool schema.
+    """
+    lowered = raw.strip().lower()
+    try:
+        return Modality(lowered)
+    except ValueError:
+        match = _MODALITY_ALIASES.get(lowered)
+        if match:
+            return match
+        logger.warning("unknown_modality_normalized", raw=raw, fallback="other")
+        return Modality.OTHER
+
+
+def _parse_inference_metadata(data: dict[str, Any]) -> InferenceMetadata | None:
+    """Extract InferenceMetadata from a Modal response if present."""
+    raw = data.get("inference")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return InferenceMetadata(
+            model_id=raw.get("model_id", "unknown"),
+            temperature=float(raw.get("temperature", 0.0)),
+            token_count=int(raw.get("token_count", 0)),
+            inference_time_ms=float(raw.get("inference_time_ms", 0.0)),
+            sequence_fluency_score=raw.get("sequence_fluency_score"),
+        )
+    except (ValueError, TypeError):
+        return None
+
 
 # ── Retry / timeout defaults ──────────────────────────────
 
@@ -154,9 +217,9 @@ class HttpImageAnalysisTool(_HttpToolBase):
     def description(self) -> str:
         return (
             "Analyze a medical image (X-ray, CT, MRI, etc.) and return "
-            "structured findings with confidence scores, severity levels, "
-            "and region bounding boxes. Supports chest X-ray, GI tract MRI, "
-            "dermatology, ophthalmology, and histopathology images."
+            "structured findings with confidence scores and severity levels. "
+            "Supports chest X-ray, GI tract MRI, dermatology, ophthalmology, "
+            "and histopathology images."
         )
 
     @property
@@ -179,6 +242,7 @@ class HttpImageAnalysisTool(_HttpToolBase):
                 },
             },
             "required": ["image_url"],
+            "additionalProperties": False,
         }
 
     def _build_request_payload(self, **kwargs: Any) -> dict[str, Any]:
@@ -190,24 +254,37 @@ class HttpImageAnalysisTool(_HttpToolBase):
 
     def _parse_response(self, data: dict[str, Any]) -> ImageAnalysisOutput:
         """Parse MedGemma image analysis response into structured output."""
+        inference = _parse_inference_metadata(data)
+        logprob_score = data.get("logprob_confidence")
+
         findings = [
             Finding(
                 finding=f.get("finding", "Unknown finding"),
                 confidence=float(f.get("confidence", 0.5)),
                 explanation=f.get("explanation", ""),
                 severity=Severity(f.get("severity", "none")),
-                region_bbox=f.get("region_bbox"),
+                metadata={
+                    k: v for k, v in {
+                        "sequence_fluency_score": f.get("logprob_confidence", logprob_score),
+                        "model_self_reported_confidence": f.get("model_self_reported_confidence"),
+                        "confidence_note": (
+                            "confidence is model self-reported (not calibrated); "
+                            "sequence_fluency_score is token-level predictability (not clinical accuracy)"
+                        ),
+                    }.items() if v is not None
+                },
             )
             for f in data.get("findings", [])
         ]
 
         return ImageAnalysisOutput(
-            modality_detected=Modality(data.get("modality_detected", "other")),
+            modality_detected=_normalize_modality(data.get("modality_detected", "other")),
             findings=findings,
             attention_heatmap_url=data.get("attention_heatmap_url"),
             embedding_id=data.get("embedding_id"),
             differential_diagnoses=data.get("differential_diagnoses", []),
             recommended_followup=data.get("recommended_followup", []),
+            inference=inference,
         )
 
 
@@ -254,6 +331,7 @@ class HttpTextReasoningTool(_HttpToolBase):
                 },
             },
             "required": ["clinical_context"],
+            "additionalProperties": False,
         }
 
     def _build_request_payload(self, **kwargs: Any) -> dict[str, Any]:
@@ -268,6 +346,8 @@ class HttpTextReasoningTool(_HttpToolBase):
         """Parse MedGemma text reasoning response."""
         from datetime import datetime
 
+        inference = _parse_inference_metadata(data)
+
         evidence = [
             EvidenceCitation(
                 source=c.get("source", "unknown"),
@@ -278,13 +358,17 @@ class HttpTextReasoningTool(_HttpToolBase):
             for c in data.get("evidence_citations", [])
         ]
 
+        confidence = float(data.get("confidence", 0.5))
+        reasoning_chain = data.get("reasoning_chain", [])
+
         return TextReasoningOutput(
-            reasoning_chain=data.get("reasoning_chain", []),
+            reasoning_chain=reasoning_chain,
             assessment=data.get("assessment", "No assessment available"),
-            confidence=float(data.get("confidence", 0.5)),
+            confidence=confidence,
             evidence_citations=evidence,
             plan_suggestions=data.get("plan_suggestions", []),
             contraindication_flags=data.get("contraindication_flags", []),
+            inference=inference,
         )
 
 
@@ -327,6 +411,7 @@ class HttpAudioAnalysisTool(_HttpToolBase):
                 },
             },
             "required": ["audio_url"],
+            "additionalProperties": False,
         }
 
     def _build_request_payload(self, **kwargs: Any) -> dict[str, Any]:
@@ -397,6 +482,7 @@ class HttpHistorySearchTool(_HttpToolBase):
                 },
             },
             "required": ["patient_id", "query"],
+            "additionalProperties": False,
         }
 
     def _get_path(self) -> str:

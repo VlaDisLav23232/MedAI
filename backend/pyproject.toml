@@ -17,6 +17,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.18",
     "structlog>=24.4.0",
+    "scikit-learn>=1.5.0",
 ]
 
 [project.optional-dependencies]
