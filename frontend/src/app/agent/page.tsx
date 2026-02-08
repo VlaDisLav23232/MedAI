@@ -11,7 +11,7 @@ import { PatientSelector } from "@/components/agent/PatientSelector";
 import { apiClient } from "@/lib/api/client";
 import { mapApiResponseToAIReport } from "@/lib/api/mappers";
 import { useChatStore, useUIStore } from "@/lib/store";
-import { filesToImageDataUrls, filesToAudioDataUrls, getFileCategory } from "@/lib/file-upload";
+import { getFileCategory } from "@/lib/file-upload";
 import type { ChatMessage } from "@/lib/types";
 import {
   PanelLeftOpen,
@@ -84,15 +84,27 @@ export default function AgentPage() {
       try {
         setAgentStatus("analyzing_text");
 
-        // Convert attached files to data URLs for the API
-        const imageUrls = attachments ? await filesToImageDataUrls(attachments) : [];
-        const audioUrls = attachments ? await filesToAudioDataUrls(attachments) : [];
+        // Upload attached files to server first, get back URLs sorted by category
+        let imageUrls: string[] = [];
+        let audioUrls: string[] = [];
+        let documentUrls: string[] = [];
+
+        if (attachments && attachments.length > 0) {
+          const uploadRes = await apiClient.uploadFiles(attachments);
+          if (uploadRes.error) {
+            throw new Error(`File upload failed: ${uploadRes.error}`);
+          }
+          imageUrls = uploadRes.data?.image_urls ?? [];
+          audioUrls = uploadRes.data?.audio_urls ?? [];
+          documentUrls = uploadRes.data?.document_urls ?? [];
+        }
 
         const res = await apiClient.analyzeCase({
           patient_id: currentPatient.id,
           doctor_query: text,
           ...(imageUrls.length > 0 && { image_urls: imageUrls }),
           ...(audioUrls.length > 0 && { audio_urls: audioUrls }),
+          ...(documentUrls.length > 0 && { document_urls: documentUrls }),
         });
         setAgentStatus("complete");
 
