@@ -55,7 +55,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const res = await apiClient.login(req);
-      setUser(res.user);
+      if (res.error || !res.data) {
+        setError(res.error ?? "Login failed");
+        return false;
+      }
+      const { access_token, user } = res.data;
+      localStorage.setItem(STORAGE_KEYS.authToken, access_token);
+      localStorage.setItem(STORAGE_KEYS.authUser, JSON.stringify(user));
+      setUser(user);
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -71,7 +78,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       try {
         const res = await apiClient.register(req);
-        setUser(res.user);
+        if (res.error || !res.data) {
+          setError(res.error ?? "Registration failed");
+          return false;
+        }
+        const { access_token, user } = res.data;
+        localStorage.setItem(STORAGE_KEYS.authToken, access_token);
+        localStorage.setItem(STORAGE_KEYS.authUser, JSON.stringify(user));
+        setUser(user);
         return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Registration failed");
@@ -85,6 +99,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     apiClient.logout();
+    localStorage.removeItem(STORAGE_KEYS.authToken);
+    localStorage.removeItem(STORAGE_KEYS.authUser);
     setUser(null);
   }, []);
 
