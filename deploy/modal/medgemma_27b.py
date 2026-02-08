@@ -148,16 +148,39 @@ class MedGemma27B:
             inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
 
             # ── Inference ──────────────────────────────────
+            import time as _time
+
+            _t0 = _time.monotonic()
             with torch.inference_mode():
-                output_ids = self.model.generate(
+                output = self.model.generate(
                     **inputs,
                     max_new_tokens=2048,
                     do_sample=False,
                     pad_token_id=self.tokenizer.eos_token_id,
+                    return_dict_in_generate=True,
+                    output_scores=True,
                 )
+            inference_time_ms = round((_time.monotonic() - _t0) * 1000, 1)
 
+            output_ids = output.sequences
             generated_ids = output_ids[0][inputs["input_ids"].shape[1]:]
             raw_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
+            token_count = len(generated_ids)
+
+            # ── Compute logprob-based confidence ───────────
+            import math
+            logprob_confidence = None
+            if output.scores:
+                log_probs = []
+                for i, score in enumerate(output.scores):
+                    if i >= len(generated_ids):
+                        break
+                    token_id = generated_ids[i].item()
+                    token_logprob = torch.log_softmax(score[0], dim=-1)[token_id].item()
+                    log_probs.append(token_logprob)
+                if log_probs:
+                    mean_logprob = sum(log_probs) / len(log_probs)
+                    logprob_confidence = round(math.exp(mean_logprob), 4)
 
             # ── Parse response ─────────────────────────────
             try:
@@ -176,6 +199,20 @@ class MedGemma27B:
                     "contraindication_flags": [],
                     "raw_output": raw_text,
                 }
+
+            # Inject real logprob-based confidence
+            if logprob_confidence is not None:
+                result["model_self_reported_confidence"] = result.get("confidence", 0.5)
+                result["logprob_confidence"] = logprob_confidence
+
+            # Inject real inference metadata
+            result["inference"] = {
+                "model_id": self.model_id,
+                "temperature": 0.0,  # do_sample=False → greedy decoding
+                "token_count": token_count,
+                "inference_time_ms": inference_time_ms,
+                "sequence_fluency_score": logprob_confidence,
+            }
 
             return result
 

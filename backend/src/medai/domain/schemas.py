@@ -12,9 +12,12 @@ from pydantic import BaseModel, Field
 
 from medai.domain.entities import (
     ApprovalStatus,
+    ConfidenceMethod,
     Finding,
+    InferenceMetadata,
     JudgmentResult,
     Modality,
+    PipelineMetrics,
 )
 
 
@@ -35,12 +38,20 @@ class CaseAnalysisRequest(BaseModel):
 
 
 class CaseAnalysisResponse(BaseModel):
-    """AI analysis result returned to the doctor."""
+    """AI analysis result returned to the doctor.
+
+    This is the PRIMARY contract between backend and frontend.
+    Frontend renders the entire report from this single response.
+    """
     report_id: str
     encounter_id: str
     patient_id: str
     diagnosis: str
-    confidence: float
+    confidence: float = Field(description="Overall confidence (see confidence_method for how it was computed)")
+    confidence_method: ConfidenceMethod = Field(
+        default=ConfidenceMethod.MODEL_SELF_REPORTED,
+        description="How the top-level confidence was determined — display as tooltip",
+    )
     evidence_summary: str
     timeline_impact: str
     plan: list[str]
@@ -52,6 +63,11 @@ class CaseAnalysisResponse(BaseModel):
     # Explainability artifacts
     heatmap_urls: list[str] = Field(default_factory=list)
     specialist_summaries: dict[str, str] = Field(default_factory=dict)
+    # Performance / provenance
+    pipeline_metrics: PipelineMetrics | None = Field(
+        default=None,
+        description="Timing breakdown for the full pipeline — render in performance panel",
+    )
 
 
 # ═══════════════════════════════════════════════════════════════

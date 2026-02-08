@@ -50,7 +50,7 @@ class Settings(BaseSettings):
         description="Claude model to use for orchestration",
     )
     orchestrator_max_tokens: int = Field(
-        default=4096,
+        default=16384,
         description="Max output tokens per orchestrator call",
     )
     judge_max_tokens: int = Field(

@@ -63,6 +63,7 @@ async def analyze_case(
         patient_id=report.patient_id,
         diagnosis=report.diagnosis,
         confidence=report.confidence,
+        confidence_method=report.confidence_method,
         evidence_summary=report.evidence_summary,
         timeline_impact=report.timeline_impact,
         plan=report.plan,
@@ -73,6 +74,7 @@ async def analyze_case(
         created_at=report.created_at,
         heatmap_urls=heatmap_urls,
         specialist_summaries=specialist_summaries,
+        pipeline_metrics=report.pipeline_metrics,
     )
 
 
@@ -106,6 +108,7 @@ async def get_report(
         patient_id=report.patient_id,
         diagnosis=report.diagnosis,
         confidence=report.confidence,
+        confidence_method=report.confidence_method,
         evidence_summary=report.evidence_summary,
         timeline_impact=report.timeline_impact,
         plan=report.plan,
@@ -116,6 +119,7 @@ async def get_report(
         created_at=report.created_at,
         heatmap_urls=heatmap_urls,
         specialist_summaries=specialist_summaries,
+        pipeline_metrics=report.pipeline_metrics,
     )
 
 

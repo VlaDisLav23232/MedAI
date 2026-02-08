@@ -235,6 +235,111 @@ async def main():
         section("📎 EVIDENCE SUMMARY")
         print(f"    {report.get('evidence_summary', 'N/A')[:300]}")
 
+        section("📊 CONFIDENCE METHOD")
+        print(f"    Method: {report.get('confidence_method', 'N/A')}")
+
+        section("⏱️  PIPELINE METRICS")
+        pm = report.get("pipeline_metrics")
+        if pm:
+            print(f"    Tools:  {pm.get('tools_s', '?')}s")
+            print(f"    Judge:  {pm.get('judge_s', '?')}s")
+            print(f"    Report: {pm.get('report_s', '?')}s")
+            print(f"    Total:  {pm.get('total_s', '?')}s")
+            print(f"    Requery cycles: {pm.get('requery_cycles', 0)}")
+            print(f"    Tools called: {pm.get('tools_called', [])}")
+            print(f"    Tools failed: {pm.get('tools_failed', [])}")
+            tt = pm.get("tool_timings", {})
+            if tt:
+                print(f"    Per-tool timings:")
+                for tname, ts in tt.items():
+                    print(f"      {tname}: {ts}s")
+        else:
+            warn("No pipeline metrics returned")
+
+        # ═══════════════════════════════════════════════════
+        #  TEST 4b: RAG E2E — Analyze SEED patient (has 9 timeline events)
+        # ═══════════════════════════════════════════════════
+        section("Test 4b: RAG E2E — Seed Patient with History 📚")
+        info("Analyzing PT-DEMO0001 (Maria Ivanova) who has 9 prior timeline events")
+        info("This will exercise TF-IDF retrieval against real patient history")
+
+        rag_case_request = {
+            "patient_id": "PT-DEMO0001",
+            "encounter_id": "ENC-E2E-RAG",
+            "doctor_query": (
+                "62-year-old female with known COPD (GOLD II) now presents with acute worsening. "
+                "3-week progressive dyspnea, productive cough with yellowish-green sputum, "
+                "low-grade fever. SpO₂ 91% on room air. "
+                "Please review her prior history and imaging, reason about the clinical picture, "
+                "and determine if this is a COPD exacerbation, new pneumonia, or progression."
+            ),
+            "clinical_context": (
+                "Known COPD patient on Tiotropium. Prior CXR showed emphysema. "
+                "Current vitals: BP 130/80, HR 98, RR 24, SpO₂ 91%."
+            ),
+            "image_urls": [
+                "https://raw.githubusercontent.com/ieee8023/covid-chestxray-dataset/master/images/1-s2.0-S0929664620300449-gr2_lrg-a.jpg"
+            ],
+            "patient_history_text": (
+                "PMH: COPD GOLD Stage II (diagnosed Aug 2025), Hypertension, GERD. "
+                "35-pack-year smoking history (reduced to 10/day). "
+                "Medications: Tiotropium 18mcg QD, Salbutamol PRN, Amlodipine 5mg."
+            ),
+        }
+
+        print()
+        t0_rag = time.time()
+        resp = await client.post("/api/v1/cases/analyze", json=rag_case_request)
+        rag_elapsed = time.time() - t0_rag
+
+        if resp.status_code != 200:
+            fail(f"POST /cases/analyze (RAG) → {resp.status_code}")
+            print(f"    Error: {resp.text[:500]}")
+        else:
+            rag_report = resp.json()
+            rag_report_id = rag_report["report_id"]
+            success(f"POST /cases/analyze (RAG) → {resp.status_code} ({rag_elapsed:.1f}s)")
+            success(f"RAG Report ID: {rag_report_id}")
+
+            section("📚 RAG — TIMELINE IMPACT")
+            ti = rag_report.get("timeline_impact", "")
+            print(f"    {ti[:400]}")
+            if "No prior medical records" in ti:
+                fail("RAG FAILED: No history found for seed patient PT-DEMO0001!")
+            elif "prior timeline entries" in ti or "TF-IDF" in ti:
+                success("RAG WORKING: TF-IDF retrieved patient history successfully")
+            else:
+                warn(f"RAG returned unexpected timeline_impact format")
+
+            section("📚 RAG — SPECIALIST SUMMARIES (history_search)")
+            hs = rag_report.get("specialist_summaries", {}).get("history_search", "N/A")
+            print(f"    {hs[:400]}")
+
+            section("📋 RAG DIAGNOSIS")
+            print(f"    {BOLD}{rag_report['diagnosis'][:250]}{RESET}")
+            print(f"    Confidence: {rag_report['confidence']}")
+
+            section("⚖️  RAG JUDGE VERDICT")
+            rv = rag_report.get("judge_verdict")
+            if rv:
+                print(f"    Verdict: {rv.get('verdict', 'N/A')}")
+                print(f"    Confidence: {rv.get('confidence', 'N/A')}")
+                if rv.get("reasoning"):
+                    print(f"    Reasoning: {rv['reasoning'][:250]}")
+
+            section("⏱️  RAG PIPELINE METRICS")
+            rpm = rag_report.get("pipeline_metrics")
+            if rpm:
+                print(f"    Total: {rpm.get('total_s', '?')}s")
+                tt = rpm.get("tool_timings", {})
+                for tname, ts in tt.items():
+                    print(f"      {tname}: {ts}s")
+
+            # Save RAG report
+            rag_report_path = Path(__file__).parent / "e2e_rag_report_output.json"
+            rag_report_path.write_text(pretty_json(rag_report))
+            info(f"RAG report saved to {rag_report_path}")
+
         # ═══════════════════════════════════════════════════
         #  TEST 5: Retrieve Report by ID
         # ═══════════════════════════════════════════════════

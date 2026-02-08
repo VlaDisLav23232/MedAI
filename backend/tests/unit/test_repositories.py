@@ -188,13 +188,13 @@ class TestInMemoryTimelineRepository:
         repo.seed(seed_events)
 
         maria_events = await repo.get_for_patient("PT-DEMO0001")
-        assert len(maria_events) == 3
+        assert len(maria_events) == 9
 
         oleks_events = await repo.get_for_patient("PT-DEMO0002")
-        assert len(oleks_events) == 3
+        assert len(oleks_events) == 7
 
         natalia_events = await repo.get_for_patient("PT-DEMO0003")
-        assert len(natalia_events) == 2
+        assert len(natalia_events) == 7
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -314,7 +314,7 @@ class TestSeedData:
 
     def test_seed_events_valid(self):
         events = create_seed_timeline_events()
-        assert len(events) == 8
+        assert len(events) == 23
         patient_ids = {e.patient_id for e in events}
         assert patient_ids == {"PT-DEMO0001", "PT-DEMO0002", "PT-DEMO0003"}
 
