@@ -1,0 +1,78 @@
+# ─── MedAI Docker Compose ──────────────────────────────────
+# Starts PostgreSQL + Backend + Frontend
+#
+# Usage:
+#   cp .env.docker.example .env        # fill in secrets
+#   docker-compose up --build
+#
+# Services:
+#   db       → PostgreSQL 16 on :5432
+#   backend  → FastAPI on :8000
+#   frontend → Next.js on :3000
+# ────────────────────────────────────────────────────────────
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: medai
+      POSTGRES_PASSWORD: medai
+      POSTGRES_DB: medai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medai"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Backend (FastAPI) ───────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://medai:medai@db:5432/medai
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY in .env}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-change-me}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      DEBUG: ${DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Modal endpoints (GPU inference — not in Docker)
+      MEDGEMMA_4B_ENDPOINT: ${MEDGEMMA_4B_ENDPOINT:-http://host.docker.internal:8010}
+      MEDGEMMA_27B_ENDPOINT: ${MEDGEMMA_27B_ENDPOINT:-http://host.docker.internal:8011}
+      MEDSIGLIP_ENDPOINT: ${MEDSIGLIP_ENDPOINT:-http://host.docker.internal:8012}
+      HEAR_ENDPOINT: ${HEAR_ENDPOINT:-http://host.docker.internal:8013}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; r = httpx.get('http://localhost:8000/api/v1/health'); r.raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  # ── Frontend (Next.js) ──────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+
+volumes:
+  pgdata:

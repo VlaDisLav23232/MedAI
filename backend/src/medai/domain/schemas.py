@@ -161,3 +161,37 @@ class HealthResponse(BaseModel):
     version: str
     tools_registered: list[str] = Field(default_factory=list)
     debug: bool = False
+    db_connected: bool = True
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Authentication
+# ═══════════════════════════════════════════════════════════════
+
+class LoginRequest(BaseModel):
+    """Login credentials."""
+    email: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    """New user registration."""
+    email: str
+    password: str
+    name: str
+    role: str = "doctor"
+
+
+class UserResponse(BaseModel):
+    """Public user info (no password hash)."""
+    id: str
+    email: str
+    name: str
+    role: str
+
+
+class AuthResponse(BaseModel):
+    """Token + user info returned on login/register."""
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
