@@ -108,6 +108,13 @@ class ToolName(str, Enum):
     IMAGE_EXPLAINABILITY = "image_explainability"
 
 
+class UserRole(str, Enum):
+    """User roles for access control."""
+    DOCTOR = "doctor"
+    ADMIN = "admin"
+    NURSE = "nurse"
+
+
 class ConfidenceMethod(str, Enum):
     """How a confidence value was produced — for UI transparency."""
     MODEL_SELF_REPORTED = "model_self_reported"
@@ -121,6 +128,17 @@ class ConfidenceMethod(str, Enum):
 # ═══════════════════════════════════════════════════════════════
 #  Inference Provenance
 # ═══════════════════════════════════════════════════════════════
+
+class User(BaseModel):
+    """Authenticated user of the MedAI system."""
+    id: str = Field(default_factory=lambda: f"USR-{uuid.uuid4().hex[:8].upper()}")
+    email: str
+    hashed_password: str
+    name: str
+    role: UserRole = UserRole.DOCTOR
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 
 class InferenceMetadata(BaseModel):
     """Provenance and statistics from a single model inference call.

@@ -1,6 +1,7 @@
 """Integration tests for the FastAPI endpoints.
 
 Boots the full app with mock tools and tests HTTP request/response.
+Uses in-memory SQLite so no external database is needed.
 """
 
 from __future__ import annotations
@@ -12,15 +13,76 @@ os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-key"
 os.environ["DEBUG"] = "true"
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import json
+from datetime import date, datetime
+
+from medai.api.auth import get_current_user
+from medai.domain.entities import User, UserRole
 from medai.main import create_app
+from medai.repositories.database import get_db_session
+from medai.repositories.models import Base
+
+# ── Dummy user returned by the auth override ───────────────
+_TEST_USER = User(
+    id="USR-TEST0001",
+    email="test@medai.com",
+    hashed_password="not-used",
+    name="Test Doctor",
+    role=UserRole.DOCTOR,
+)
+
+
+@pytest_asyncio.fixture
+async def _db_session_factory():
+    """Create a fresh in-memory SQLite engine + tables per test."""
+
+    def _json_serializer(obj):
+        """JSON serializer that handles datetime objects (needed for SQLite)."""
+        def default(o):
+            if isinstance(o, (datetime, date)):
+                return o.isoformat()
+            raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+        return json.dumps(obj, default=default)
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        echo=False,
+        json_serializer=_json_serializer,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    yield factory
+    await engine.dispose()
 
 
 @pytest.fixture
-def app():
+def app(_db_session_factory):
     """Create a fresh app for each test."""
-    return create_app()
+    application = create_app()
+
+    # Override DB session to use test in-memory SQLite
+    async def _override_db_session():
+        async with _db_session_factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    application.dependency_overrides[get_db_session] = _override_db_session
+
+    # Bypass JWT auth
+    async def _override_current_user() -> User:
+        return _TEST_USER
+    application.dependency_overrides[get_current_user] = _override_current_user
+
+    return application
 
 
 @pytest.fixture

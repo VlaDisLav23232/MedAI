@@ -10,8 +10,6 @@ import { ROUTES } from "@/lib/constants";
 import {
   Activity,
   Bot,
-  Clock,
-  FileSearch,
   Menu,
   X,
   LogIn,
@@ -24,8 +22,6 @@ import {
 const navLinks = [
   { href: "/", label: "Home", icon: Activity },
   { href: "/agent", label: "Co-Pilot", icon: Bot },
-  { href: "/case/demo", label: "Case View", icon: FileSearch },
-  { href: "/timeline/PT-12345", label: "Timeline", icon: Clock },
   { href: "/patients", label: "Patients", icon: Users },
 ];
 

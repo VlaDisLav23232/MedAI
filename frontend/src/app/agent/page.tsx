@@ -1,18 +1,21 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { CitationsSidebar } from "@/components/agent/CitationsSidebar";
 import { ChatArea } from "@/components/agent/ChatArea";
 import { ChatInput } from "@/components/agent/ChatInput";
 import { AgentStatusIndicator } from "@/components/shared/AgentStatusIndicator";
+import { PatientSelector } from "@/components/agent/PatientSelector";
 import { apiClient } from "@/lib/api/client";
-import { mockChatMessages, mockCitations, mockPatient } from "@/lib/mock-data";
-import type { ChatMessage, AgentStatus, Citation } from "@/lib/types";
+import { mapApiResponseToAIReport } from "@/lib/api/mappers";
+import { useChatStore, useUIStore } from "@/lib/store";
+import { filesToImageDataUrls, filesToAudioDataUrls, getFileCategory } from "@/lib/file-upload";
+import type { ChatMessage } from "@/lib/types";
 import {
   PanelLeftOpen,
   PanelLeftClose,
-  User,
   Activity,
   Settings,
   Wifi,
@@ -20,85 +23,167 @@ import {
 } from "lucide-react";
 
 export default function AgentPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle");
-  const [citations, setCitations] = useState<Citation[]>([]);
-  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const searchParams = useSearchParams();
+
+  // Zustand chat store
+  const messages = useChatStore((s) => s.messages);
+  const addMessage = useChatStore((s) => s.addMessage);
+  const setMessages = useChatStore((s) => s.setMessages);
+  const citations = useChatStore((s) => s.citations);
+  const setCitations = useChatStore((s) => s.setCitations);
+  const agentStatus = useChatStore((s) => s.agentStatus);
+  const setAgentStatus = useChatStore((s) => s.setAgentStatus);
+  const sidebarOpen = useChatStore((s) => s.sidebarOpen);
+  const setSidebarOpen = useChatStore((s) => s.setSidebarOpen);
+  const currentPatient = useChatStore((s) => s.currentPatient);
+
+  // UI store — backend health
+  const backendOnline = useUIStore((s) => s.backendOnline);
+  const setBackendOnline = useUIStore((s) => s.setBackendOnline);
 
   // Check backend availability on mount
   useEffect(() => {
     apiClient.isBackendAvailable().then(setBackendOnline);
-  }, []);
+  }, [setBackendOnline]);
+
+  // Pre-select patient from URL param ?patientId=
+  const urlPatientId = searchParams.get("patientId");
 
   const handleSend = useCallback(
-    async (text: string, _attachments?: File[]) => {
-      // Add user message
+    async (text: string, attachments?: File[]) => {
+      if (!currentPatient) return;
+
+      // Add user message with attachment info
       const userMsg: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: "user",
         content: text,
         timestamp: new Date().toISOString(),
+        attachments: attachments?.map((f, i) => ({
+          id: `att-${Date.now()}-${i}`,
+          type: getFileCategory(f),
+          name: f.name,
+          url: URL.createObjectURL(f),
+        })),
       };
-      setMessages((prev) => [...prev, userMsg]);
+      addMessage(userMsg);
       setAgentStatus("routing");
 
-      // Attempt real API call
-      if (backendOnline) {
-        try {
-          setAgentStatus("analyzing_text");
-          const res = await apiClient.analyzeCase({
-            patient_id: mockPatient.id,
-            doctor_query: text,
-          });
-          setAgentStatus("complete");
-
-          const agentMsg: ChatMessage = {
-            id: `msg-${Date.now() + 1}`,
-            role: "agent",
-            content: `**Diagnosis:** ${res.diagnosis} (${Math.round(res.confidence * 100)}% confidence)\n\n${res.evidence_summary}\n\n**Plan:**\n${res.plan.map((p) => `- ${p}`).join("\n")}`,
-            timestamp: new Date().toISOString(),
-            citations: res.findings.map((f, i) => ({
-              id: `cit-${i}`,
-              type: "finding" as const,
-              title: f.finding,
-              content: f.explanation,
-              source: "AI Analysis",
-              confidence: f.confidence,
-            })),
-          };
-
-          setCitations(agentMsg.citations ?? []);
-          setMessages((prev) => [...prev, agentMsg]);
-          setTimeout(() => setAgentStatus("idle"), 2000);
-          return;
-        } catch {
-          // Fall through to mock on error
-        }
+      if (!backendOnline) {
+        setAgentStatus("error");
+        const errMsg: ChatMessage = {
+          id: `msg-${Date.now() + 1}`,
+          role: "system",
+          content: "Backend is unavailable. Please check that the server is running on port 8000.",
+          timestamp: new Date().toISOString(),
+        };
+        addMessage(errMsg);
+        return;
       }
 
-      // Mock fallback simulation
-      setTimeout(() => setAgentStatus("analyzing_image"), 800);
-      setTimeout(() => setAgentStatus("searching_history"), 2000);
-      setTimeout(() => setAgentStatus("analyzing_text"), 3500);
-      setTimeout(() => setAgentStatus("judging"), 5000);
-      setTimeout(() => setAgentStatus("generating_report"), 6000);
-      setTimeout(() => {
-        setCitations(mockCitations);
-        setMessages((prev) => [...prev, mockChatMessages[1], mockChatMessages[2]]);
+      try {
+        setAgentStatus("analyzing_text");
+
+        // Convert attached files to data URLs for the API
+        const imageUrls = attachments ? await filesToImageDataUrls(attachments) : [];
+        const audioUrls = attachments ? await filesToAudioDataUrls(attachments) : [];
+
+        const res = await apiClient.analyzeCase({
+          patient_id: currentPatient.id,
+          doctor_query: text,
+          ...(imageUrls.length > 0 && { image_urls: imageUrls }),
+          ...(audioUrls.length > 0 && { audio_urls: audioUrls }),
+        });
         setAgentStatus("complete");
-      }, 7000);
-      setTimeout(() => setAgentStatus("idle"), 9000);
+
+        // Map the response to a structured AI report
+        const mappedReport = mapApiResponseToAIReport(res);
+
+        // Build rich citations from findings + specialist summaries
+        const allCitations: import("@/lib/types").Citation[] = [];
+
+        // Findings → "finding" type citations
+        res.findings.forEach((f, i) => {
+          allCitations.push({
+            id: `cit-finding-${i}`,
+            type: "finding",
+            title: f.finding,
+            content: f.explanation,
+            source: "AI Analysis",
+            confidence: f.confidence,
+          });
+        });
+
+        // Specialist summaries → typed citations for sidebar tabs
+        if (res.specialist_summaries) {
+          Object.entries(res.specialist_summaries).forEach(([tool, summary], i) => {
+            if (tool.includes("image") || tool === "image_analysis") {
+              allCitations.push({
+                id: `cit-imaging-${i}`,
+                type: "imaging",
+                title: "Image Analysis",
+                content: summary,
+                source: tool,
+              });
+            } else if (tool.includes("history") || tool === "history_search") {
+              allCitations.push({
+                id: `cit-history-${i}`,
+                type: "history",
+                title: "Patient History",
+                content: summary,
+                source: tool,
+              });
+            } else if (tool.includes("audio") || tool === "audio_analysis") {
+              allCitations.push({
+                id: `cit-lab-${i}`,
+                type: "lab",
+                title: "Audio Analysis",
+                content: summary,
+                source: tool,
+              });
+            } else if (tool.includes("text") || tool.includes("reasoning") || tool === "text_reasoning") {
+              allCitations.push({
+                id: `cit-guideline-${i}`,
+                type: "guideline",
+                title: "Clinical Reasoning",
+                content: summary,
+                source: tool,
+              });
+            }
+          });
+        }
+
+        const agentMsg: ChatMessage = {
+          id: `msg-${Date.now() + 1}`,
+          role: "agent",
+          content: `**Diagnosis:** ${res.diagnosis} (${Math.round(res.confidence * 100)}% confidence)\n\n${res.evidence_summary}\n\n**Plan:**\n${res.plan.map((p) => `- ${p}`).join("\n")}\n\n[View Full Report →](/case/${res.report_id})`,
+          timestamp: new Date().toISOString(),
+          report: mappedReport,
+          citations: allCitations,
+        };
+
+        setCitations(agentMsg.citations ?? []);
+        addMessage(agentMsg);
+        setTimeout(() => setAgentStatus("idle"), 2000);
+      } catch (err) {
+        setAgentStatus("error");
+        const errMsg: ChatMessage = {
+          id: `msg-${Date.now() + 1}`,
+          role: "system",
+          content: `Analysis failed: ${err instanceof Error ? err.message : "Unknown error"}. Please try again.`,
+          timestamp: new Date().toISOString(),
+        };
+        addMessage(errMsg);
+      }
     },
-    [backendOnline]
+    [backendOnline, currentPatient, addMessage, setAgentStatus, setCitations]
   );
 
-  const handleLoadDemo = useCallback(() => {
-    setMessages(mockChatMessages);
-    setCitations(mockCitations);
-    setAgentStatus("complete");
-    setTimeout(() => setAgentStatus("idle"), 2000);
-  }, []);
+  const handleReset = useCallback(() => {
+    setMessages([]);
+    setCitations([]);
+    setAgentStatus("idle");
+  }, [setMessages, setCitations, setAgentStatus]);
 
   return (
     <div className="flex h-screen pt-16 bg-gray-50 dark:bg-surface-dark">
@@ -135,48 +220,34 @@ export default function AgentPage() {
 
             <div className="h-5 w-px bg-gray-200 dark:bg-gray-700" />
 
-            {/* Patient context */}
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
-                <User size={14} className="text-brand-600 dark:text-brand-400" />
-              </div>
-              <div>
-                <span className="text-xs font-semibold text-gray-900 dark:text-white block leading-none">
-                  {mockPatient.name}
-                </span>
-                <span className="text-[10px] text-gray-400">
-                  {mockPatient.medical_record_number}
-                </span>
-              </div>
-            </div>
+            {/* Patient selector */}
+            <PatientSelector preselectedId={urlPatientId ?? undefined} />
           </div>
 
           <div className="flex items-center gap-3">
             <AgentStatusIndicator status={agentStatus} />
 
-            {backendOnline !== null && (
-              <div
-                className={cn(
-                  "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium",
-                  backendOnline
-                    ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
-                    : "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
-                )}
-                title={backendOnline ? "Connected to backend" : "Using mock data"}
-              >
-                {backendOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
-                {backendOnline ? "Live" : "Mock"}
-              </div>
-            )}
+            <div
+              className={cn(
+                "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium",
+                backendOnline
+                  ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
+                  : "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
+              )}
+              title={backendOnline ? "Connected to backend" : "Backend offline"}
+            >
+              {backendOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
+              {backendOnline ? "Live" : "Offline"}
+            </div>
 
             <div className="h-5 w-px bg-gray-200 dark:bg-gray-700" />
 
             <button
-              onClick={handleLoadDemo}
+              onClick={handleReset}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20 hover:bg-brand-100 dark:hover:bg-brand-900/30 transition"
             >
               <Activity size={12} />
-              Load Demo
+              New Chat
             </button>
 
             <button className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-surface-dark-3 transition text-gray-400" aria-label="Settings (coming soon)" title="Settings — coming soon" disabled>
@@ -188,7 +259,7 @@ export default function AgentPage() {
         {/* Chat messages */}
         <ChatArea
           messages={messages}
-          onCitationClick={(id) => {
+          onCitationClick={() => {
             setSidebarOpen(true);
           }}
           onPromptClick={(prompt) => handleSend(prompt)}
@@ -199,8 +270,16 @@ export default function AgentPage() {
         <div className="p-4 bg-white dark:bg-surface-dark-2 border-t border-gray-200 dark:border-gray-800">
           <ChatInput
             onSend={handleSend}
-            disabled={agentStatus !== "idle" && agentStatus !== "complete"}
+            disabled={
+              (agentStatus !== "idle" && agentStatus !== "complete" && agentStatus !== "error") ||
+              !currentPatient
+            }
           />
+          {!currentPatient && (
+            <p className="text-xs text-amber-500 text-center mt-2">
+              Select a patient above to start the analysis.
+            </p>
+          )}
           <p className="text-[10px] text-gray-400 text-center mt-2">
             AI-assisted analysis — always verify with clinical judgment. Not for direct patient use.
           </p>

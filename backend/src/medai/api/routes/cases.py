@@ -7,9 +7,13 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from medai.api.dependencies import get_orchestrator, get_report_repository
+from medai.api.dependencies import get_orchestrator, get_report_repository, get_timeline_repository
 from medai.config import get_settings
 from medai.domain.interfaces import BaseOrchestrator, BaseReportRepository
+from medai.api.auth import get_current_user
+from medai.domain.entities import TimelineEvent, TimelineEventType, User
+from medai.domain.interfaces import BaseOrchestrator, BaseReportRepository, BaseTimelineRepository
+
 from medai.domain.schemas import (
     CaseAnalysisRequest,
     CaseAnalysisResponse,
@@ -26,6 +30,8 @@ async def analyze_case(
     request: CaseAnalysisRequest,
     orchestrator: BaseOrchestrator = Depends(get_orchestrator),
     report_repo: BaseReportRepository = Depends(get_report_repository),
+    timeline_repo: BaseTimelineRepository = Depends(get_timeline_repository),
+    current_user: User = Depends(get_current_user),
 ) -> CaseAnalysisResponse:
     """Submit a patient case for AI analysis.
 
@@ -48,6 +54,22 @@ async def analyze_case(
     # Set up artifact storage for heatmaps
     settings = get_settings()
     artifact_store = ArtifactStorage(settings.storage_local_path)
+    # Create a timeline event for the patient
+    await timeline_repo.add_event(
+        TimelineEvent(
+            patient_id=request.patient_id,
+            date=report.created_at,
+            event_type=TimelineEventType.AI_REPORT,
+            summary=f"AI Analysis: {report.diagnosis} ({report.confidence:.0%} confidence)",
+            source_id=report.id,
+            source_type="ai_report",
+            metadata={
+                "doctor_id": current_user.id,
+                "doctor_name": current_user.name,
+                "confidence": report.confidence,
+            },
+        )
+    )
 
     # Map domain report → API response
     heatmap_urls = []
@@ -130,6 +152,7 @@ async def analyze_case(
 async def get_report(
     report_id: str,
     report_repo: BaseReportRepository = Depends(get_report_repository),
+    _current_user: User = Depends(get_current_user),
 ) -> CaseAnalysisResponse:
     """Retrieve a previously generated report by ID."""
     report = await report_repo.get(report_id)
@@ -187,21 +210,49 @@ async def get_report(
 async def approve_report(
     request: ReportApprovalRequest,
     report_repo: BaseReportRepository = Depends(get_report_repository),
+    timeline_repo: BaseTimelineRepository = Depends(get_timeline_repository),
+    current_user: User = Depends(get_current_user),
 ) -> ReportApprovalResponse:
     """Doctor approves, edits, or rejects an AI report.
 
     Updates the report's approval status in the database.
+    If edits are provided, they are applied to mutable report fields.
     """
     report = await report_repo.update_approval(
         report_id=request.report_id,
         status=request.status.value,
         doctor_notes=request.doctor_notes,
+        edits=request.edits,
     )
     if report is None:
         raise HTTPException(
             status_code=404,
             detail=f"Report {request.report_id} not found",
         )
+
+    # Create a timeline event for the approval decision
+    status_label = {
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "edited": "Approved with Edits",
+    }.get(request.status.value, request.status.value)
+
+    await timeline_repo.add_event(
+        TimelineEvent(
+            patient_id=report.patient_id,
+            date=datetime.utcnow(),
+            event_type=TimelineEventType.NOTE,
+            summary=f"Report {status_label} by Dr. {current_user.name}: {report.diagnosis}",
+            source_id=report.id,
+            source_type="approval",
+            metadata={
+                "doctor_id": current_user.id,
+                "doctor_name": current_user.name,
+                "approval_status": request.status.value,
+                "doctor_notes": request.doctor_notes,
+            },
+        )
+    )
 
     return ReportApprovalResponse(
         report_id=report.id,

@@ -13,8 +13,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from medai import __version__
-from medai.api.routes import health, cases, patients
+from medai.api.routes import health, cases, patients, auth
 from medai.config import get_settings
+from medai.repositories.database import dispose_db, init_db
 
 
 @asynccontextmanager
@@ -30,8 +31,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         model=settings.orchestrator_model,
     )
 
+    # Initialize database tables (dev convenience — use Alembic in prod)
+    await init_db()
+    logger.info("database_initialized")
+
     yield  # App is running
 
+    # Clean shutdown
+    await dispose_db()
     logger.info("shutting_down_medai_backend")
 
 
@@ -50,10 +57,10 @@ def create_app() -> FastAPI:
         debug=settings.debug,
     )
 
-    # ── CORS (allow frontend) ──────────────────────────────
+    # ── CORS (restricted to configured origins) ────────────
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Restrict in production
+        allow_origins=settings.allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -61,6 +68,7 @@ def create_app() -> FastAPI:
 
     # ── Routes ─────────────────────────────────────────────
     app.include_router(health.router, prefix="/api/v1")
+    app.include_router(auth.router, prefix="/api/v1")
     app.include_router(cases.router, prefix="/api/v1")
     app.include_router(patients.router, prefix="/api/v1")
 

@@ -101,6 +101,14 @@ class PatientCreateRequest(BaseModel):
     medical_record_number: str | None = None
 
 
+class PatientUpdateRequest(BaseModel):
+    """Update an existing patient record. All fields optional."""
+    name: str | None = None
+    date_of_birth: str | None = None  # ISO date
+    gender: str | None = None
+    medical_record_number: str | None = None
+
+
 class PatientSummary(BaseModel):
     """Lightweight patient info for lists."""
     id: str
@@ -161,3 +169,37 @@ class HealthResponse(BaseModel):
     version: str
     tools_registered: list[str] = Field(default_factory=list)
     debug: bool = False
+    db_connected: bool = True
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Authentication
+# ═══════════════════════════════════════════════════════════════
+
+class LoginRequest(BaseModel):
+    """Login credentials."""
+    email: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    """New user registration."""
+    email: str
+    password: str
+    name: str
+    role: str = "doctor"
+
+
+class UserResponse(BaseModel):
+    """Public user info (no password hash)."""
+    id: str
+    email: str
+    name: str
+    role: str
+
+
+class AuthResponse(BaseModel):
+    """Token + user info returned on login/register."""
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse

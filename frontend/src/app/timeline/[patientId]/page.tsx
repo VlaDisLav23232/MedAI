@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { cn, formatDate } from "@/lib/utils";
 import { SeverityBadge } from "@/components/shared/SeverityBadge";
 import { LoadingAnimation } from "@/components/shared/LoadingAnimation";
-import { mockPatient, mockTimelineEvents } from "@/lib/mock-data";
-import { apiClient } from "@/lib/api/client";
+import { useTimeline, usePatient } from "@/lib/hooks";
+import { mapApiTimelineEvent, mapApiPatient } from "@/lib/api/mappers";
 import type { TimelineEvent } from "@/lib/types";
 import {
   ArrowLeft,
@@ -22,8 +22,6 @@ import {
   ChevronRight,
   ChevronDown,
   AlertCircle,
-  Wifi,
-  WifiOff,
   FileText,
 } from "lucide-react";
 
@@ -97,6 +95,8 @@ function normalizeEventType(apiType: string): TimelineEvent["event_type"] {
     "ai_report",
     "procedure",
     "medication",
+    "note",
+    "audio",
   ];
   if (known.includes(apiType as TimelineEvent["event_type"])) {
     return apiType as TimelineEvent["event_type"];
@@ -114,65 +114,36 @@ export default function TimelinePage({
   const { patientId } = params;
   const [filter, setFilter] = useState<FilterType>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [events, setEvents] = useState<TimelineEvent[]>(mockTimelineEvents);
-  const [patient, setPatient] = useState(mockPatient);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [dataSource, setDataSource] = useState<"api" | "mock">("mock");
 
-  useEffect(() => {
-    let cancelled = false;
+  // React Query — fetches from API, falls back to mock on error
+  const timelineQuery = useTimeline(patientId);
+  const patientQuery = usePatient(patientId);
 
-    async function fetchData() {
-      setLoading(true);
-      setError(null);
-      try {
-        const [timelineRes, patientRes] = await Promise.all([
-          apiClient.getPatientTimeline(patientId),
-          apiClient.getPatient(patientId),
-        ]);
+  const loading = timelineQuery.isLoading || patientQuery.isLoading;
 
-        if (cancelled) return;
-
-        const mapped: TimelineEvent[] = timelineRes.events.map((e) => ({
-          id: e.id,
-          patient_id: timelineRes.patient_id,
-          date:
-            typeof e.date === "string"
-              ? e.date
-              : new Date(e.date).toISOString(),
-          event_type: normalizeEventType(e.event_type),
-          summary: e.summary,
+  // Map API data to frontend types
+  const events: TimelineEvent[] = useMemo(() => {
+    if (timelineQuery.data) {
+      return timelineQuery.data.events.map((e) => {
+        const mapped = mapApiTimelineEvent(e);
+        return {
+          ...mapped,
+          patient_id: timelineQuery.data!.patient_id,
+          event_type: normalizeEventType(mapped.event_type),
           source_id: (e.metadata?.source_id as string) || e.id,
-          source_type: e.source_type || "unknown",
-          severity:
-            (e.metadata?.severity as TimelineEvent["severity"]) || undefined,
-        }));
-
-        setEvents(mapped);
-        setPatient({
-          id: patientRes.id,
-          name: patientRes.name,
-          dob: patientRes.date_of_birth,
-          gender: patientRes.gender as "male" | "female" | "other",
-          medical_record_number: patientRes.medical_record_number || "",
-        });
-        setDataSource("api");
-      } catch {
-        if (cancelled) return;
-        setEvents(mockTimelineEvents);
-        setPatient(mockPatient);
-        setDataSource("mock");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+          severity: (e.metadata?.severity as TimelineEvent["severity"]) || undefined,
+        };
+      });
     }
+    return [];
+  }, [timelineQuery.data]);
 
-    fetchData();
-    return () => {
-      cancelled = true;
-    };
-  }, [patientId]);
+  const patient = useMemo(() => {
+    if (patientQuery.data) {
+      return mapApiPatient(patientQuery.data);
+    }
+    return null;
+  }, [patientQuery.data]);
 
   // ── Filtering & Grouping ───────────────────────────────
 
@@ -182,6 +153,7 @@ export default function TimelinePage({
     "lab",
     "encounter",
     "ai_report",
+    "note",
     "medication",
     "procedure",
   ];
@@ -276,12 +248,12 @@ export default function TimelinePage({
             </div>
             <div>
               <span className="text-sm font-semibold text-gray-900 dark:text-white block">
-                {patient.name}
+                {patient?.name ?? "Loading…"}
               </span>
               <span className="text-xs text-gray-400">
-                {patient.medical_record_number} · DOB:{" "}
-                <time dateTime={patient.dob}>{formatDate(patient.dob)}</time>{" "}
-                · {patient.gender}
+                {patient?.medical_record_number ?? ""} · DOB:{" "}
+                <time dateTime={patient?.dob ?? ""}>{patient?.dob ? formatDate(patient.dob) : "—"}</time>{" "}
+                · {patient?.gender ?? ""}
               </span>
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -289,40 +261,21 @@ export default function TimelinePage({
                 {events.length} event
                 {events.length !== 1 ? "s" : ""} recorded
               </span>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium",
-                  dataSource === "api"
-                    ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
-                    : "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
-                )}
-                title={
-                  dataSource === "api"
-                    ? "Connected to backend API"
-                    : "Using demo data (backend unavailable)"
-                }
-              >
-                {dataSource === "api" ? (
-                  <Wifi size={10} />
-                ) : (
-                  <WifiOff size={10} />
-                )}
-                {dataSource === "api" ? "Live" : "Demo"}
-              </span>
+
             </div>
           </div>
         </div>
       </header>
 
       {/* ── Error banner ──────────────────────────── */}
-      {error && (
+      {timelineQuery.error && (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
           <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-900/10 border border-rose-200 dark:border-rose-800">
             <AlertCircle
               size={14}
               className="text-accent-rose flex-shrink-0"
             />
-            <p className="text-xs text-rose-700 dark:text-rose-400">{error}</p>
+            <p className="text-xs text-rose-700 dark:text-rose-400">{timelineQuery.error.message}</p>
           </div>
         </div>
       )}
@@ -503,12 +456,12 @@ export default function TimelinePage({
                                   </span>
                                 </span>
                               </div>
-                              {event.event_type === "ai_report" && (
+                              {(event.event_type === "ai_report" || (event.event_type === "note" && event.source_type === "approval")) && (
                                 <Link
                                   href={`/case/${event.source_id}`}
                                   className="inline-flex items-center gap-1 text-xs text-brand-500 hover:text-brand-600 font-medium mt-2"
                                 >
-                                  View Full AI Report
+                                  {event.event_type === "ai_report" ? "View Full AI Report" : "View Approved Report"}
                                   <ChevronRight size={12} />
                                 </Link>
                               )}

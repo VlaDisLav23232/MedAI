@@ -29,12 +29,12 @@ class StorageBackend(str, Enum):
 class Settings(BaseSettings):
     """Central application settings.
 
-    Reads from environment variables with MEDAI_ prefix,
-    falls back to .env file in project root.
+    Reads from environment variables,
+    falls back to backend/.env file resolved relative to this module.
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=Path(__file__).resolve().parent.parent.parent / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -86,6 +86,24 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="sqlite+aiosqlite:///./medai.db",
         description="Async database connection URL",
+    )
+
+    # ── Authentication ─────────────────────────────────────
+    jwt_secret: str = Field(
+        default="CHANGE-ME-IN-PRODUCTION",
+        description="Secret key for signing JWT tokens",
+    )
+    jwt_algorithm: str = Field(
+        default="HS256",
+        description="JWT signing algorithm",
+    )
+    access_token_expire_minutes: int = Field(
+        default=60,
+        description="JWT token expiry in minutes",
+    )
+    allowed_origins: list[str] = Field(
+        default=["http://localhost:3000"],
+        description="CORS allowed origins (comma-separated in env)",
     )
 
     # ── Storage ────────────────────────────────────────────
