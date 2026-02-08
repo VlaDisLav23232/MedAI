@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
+import { QueryProvider } from "@/providers/QueryProvider";
 import { Navbar } from "@/components/layout/Navbar";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 
@@ -27,12 +28,14 @@ export default function RootLayout({
           Skip to main content
         </a>
         <ThemeProvider>
-          <AuthProvider>
-            <Navbar />
-            <ErrorBoundary label="Application">
-              <div id="main-content">{children}</div>
-            </ErrorBoundary>
-          </AuthProvider>
+          <QueryProvider>
+            <AuthProvider>
+              <Navbar />
+              <ErrorBoundary label="Application">
+                <div id="main-content">{children}</div>
+              </ErrorBoundary>
+            </AuthProvider>
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>

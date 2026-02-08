@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { useAuth } from "@/providers/AuthProvider";
-import { ROUTES } from "@/lib/constants";
+import { ROUTES, DEFAULTS } from "@/lib/constants";
 import {
   Activity,
   Bot,
@@ -109,6 +109,11 @@ export function Navbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-3">
+            {DEFAULTS.authMode === "mock" && (
+              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                Mock Auth
+              </span>
+            )}
             <ThemeToggle />
 
             {/* User menu / Auth */}

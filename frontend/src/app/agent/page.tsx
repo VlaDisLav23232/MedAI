@@ -1,14 +1,17 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { CitationsSidebar } from "@/components/agent/CitationsSidebar";
 import { ChatArea } from "@/components/agent/ChatArea";
 import { ChatInput } from "@/components/agent/ChatInput";
 import { AgentStatusIndicator } from "@/components/shared/AgentStatusIndicator";
 import { apiClient } from "@/lib/api/client";
+import { useChatStore } from "@/lib/store";
+import { useUIStore } from "@/lib/store";
+import { filesToImageDataUrls, filesToAudioDataUrls, getFileCategory } from "@/lib/file-upload";
 import { mockChatMessages, mockCitations, mockPatient } from "@/lib/mock-data";
-import type { ChatMessage, AgentStatus, Citation } from "@/lib/types";
+import type { ChatMessage } from "@/lib/types";
 import {
   PanelLeftOpen,
   PanelLeftClose,
@@ -20,36 +23,59 @@ import {
 } from "lucide-react";
 
 export default function AgentPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle");
-  const [citations, setCitations] = useState<Citation[]>([]);
-  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  // Zustand chat store — persisted in sessionStorage
+  const messages = useChatStore((s) => s.messages);
+  const addMessage = useChatStore((s) => s.addMessage);
+  const setMessages = useChatStore((s) => s.setMessages);
+  const citations = useChatStore((s) => s.citations);
+  const setCitations = useChatStore((s) => s.setCitations);
+  const agentStatus = useChatStore((s) => s.agentStatus);
+  const setAgentStatus = useChatStore((s) => s.setAgentStatus);
+  const sidebarOpen = useChatStore((s) => s.sidebarOpen);
+  const setSidebarOpen = useChatStore((s) => s.setSidebarOpen);
+  const toggleSidebar = useChatStore((s) => s.toggleSidebar);
+
+  // UI store — backend health
+  const backendOnline = useUIStore((s) => s.backendOnline);
+  const setBackendOnline = useUIStore((s) => s.setBackendOnline);
 
   // Check backend availability on mount
   useEffect(() => {
     apiClient.isBackendAvailable().then(setBackendOnline);
-  }, []);
+  }, [setBackendOnline]);
 
   const handleSend = useCallback(
-    async (text: string, _attachments?: File[]) => {
-      // Add user message
+    async (text: string, attachments?: File[]) => {
+      // Add user message with attachment info
       const userMsg: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: "user",
         content: text,
         timestamp: new Date().toISOString(),
+        attachments: attachments?.map((f, i) => ({
+          id: `att-${Date.now()}-${i}`,
+          type: getFileCategory(f),
+          name: f.name,
+          size: f.size,
+        })),
       };
-      setMessages((prev) => [...prev, userMsg]);
+      addMessage(userMsg);
       setAgentStatus("routing");
 
       // Attempt real API call
       if (backendOnline) {
         try {
           setAgentStatus("analyzing_text");
+
+          // Convert attached files to data URLs for the API
+          const imageUrls = attachments ? await filesToImageDataUrls(attachments) : [];
+          const audioUrls = attachments ? await filesToAudioDataUrls(attachments) : [];
+
           const res = await apiClient.analyzeCase({
             patient_id: mockPatient.id,
             doctor_query: text,
+            ...(imageUrls.length > 0 && { image_urls: imageUrls }),
+            ...(audioUrls.length > 0 && { audio_urls: audioUrls }),
           });
           setAgentStatus("complete");
 
@@ -69,7 +95,7 @@ export default function AgentPage() {
           };
 
           setCitations(agentMsg.citations ?? []);
-          setMessages((prev) => [...prev, agentMsg]);
+          addMessage(agentMsg);
           setTimeout(() => setAgentStatus("idle"), 2000);
           return;
         } catch {
@@ -85,12 +111,12 @@ export default function AgentPage() {
       setTimeout(() => setAgentStatus("generating_report"), 6000);
       setTimeout(() => {
         setCitations(mockCitations);
-        setMessages((prev) => [...prev, mockChatMessages[1], mockChatMessages[2]]);
+        setMessages([...useChatStore.getState().messages, mockChatMessages[1], mockChatMessages[2]]);
         setAgentStatus("complete");
       }, 7000);
       setTimeout(() => setAgentStatus("idle"), 9000);
     },
-    [backendOnline]
+    [backendOnline, addMessage, setAgentStatus, setCitations, setMessages]
   );
 
   const handleLoadDemo = useCallback(() => {
@@ -98,7 +124,7 @@ export default function AgentPage() {
     setCitations(mockCitations);
     setAgentStatus("complete");
     setTimeout(() => setAgentStatus("idle"), 2000);
-  }, []);
+  }, [setMessages, setCitations, setAgentStatus]);
 
   return (
     <div className="flex h-screen pt-16 bg-gray-50 dark:bg-surface-dark">
@@ -154,7 +180,7 @@ export default function AgentPage() {
           <div className="flex items-center gap-3">
             <AgentStatusIndicator status={agentStatus} />
 
-            {backendOnline !== null && (
+            {(
               <div
                 className={cn(
                   "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium",
@@ -188,7 +214,7 @@ export default function AgentPage() {
         {/* Chat messages */}
         <ChatArea
           messages={messages}
-          onCitationClick={(id) => {
+          onCitationClick={() => {
             setSidebarOpen(true);
           }}
           onPromptClick={(prompt) => handleSend(prompt)}

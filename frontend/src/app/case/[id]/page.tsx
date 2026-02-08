@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { ImageViewer } from "@/components/case/ImageViewer";
 import { FindingsPanel } from "@/components/case/FindingsPanel";
@@ -14,7 +14,14 @@ import {
   mockReasoningSteps,
   mockPatient,
 } from "@/lib/mock-data";
-import { apiClient } from "@/lib/api/client";
+import { useReport, useApproveReport } from "@/lib/hooks";
+import { usePatient } from "@/lib/hooks";
+import {
+  mapApiResponseToAIReport,
+  mapApiFinding,
+  mapApiReasoningTrace,
+  mapApiPatient,
+} from "@/lib/api/mappers";
 import type { AIReport, Finding, ReasoningStep } from "@/lib/types";
 import {
   ArrowLeft,
@@ -38,111 +45,54 @@ export default function CasePage({
   const [approvalStatus, setApprovalStatus] = useState<
     "pending" | "approved" | "rejected" | "edited"
   >("pending");
-  const [report, setReport] = useState<AIReport>(mockReport);
-  const [findings, setFindings] = useState<Finding[]>(mockFindings);
-  const [reasoningSteps, setReasoningSteps] =
-    useState<ReasoningStep[]>(mockReasoningSteps);
-  const [patient, setPatient] = useState(mockPatient);
-  const [loading, setLoading] = useState(true);
-  const [dataSource, setDataSource] = useState<"api" | "mock">("mock");
-  const [approvalLoading, setApprovalLoading] = useState(false);
-  const [approvalError, setApprovalError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  // React Query
+  const reportQuery = useReport(reportId);
+  const approveReportMutation = useApproveReport();
 
-    async function fetchReport() {
-      setLoading(true);
-      try {
-        const res = await apiClient.getReport(reportId);
-        if (cancelled) return;
+  // Derive patient ID from the report so we can fetch patient info
+  const patientIdFromReport = reportQuery.data?.patient_id;
+  const patientQuery = usePatient(patientIdFromReport);
 
-        // Map API response to frontend AIReport shape
-        const mappedFindings: Finding[] = res.findings.map((f) => ({
-          finding: f.finding,
-          confidence: f.confidence,
-          explanation: f.explanation,
-          severity: f.severity as Finding["severity"],
-          region_bbox: f.region_bbox as [number, number, number, number] | undefined,
-        }));
+  const loading = reportQuery.isLoading;
+  const dataSource: "api" | "mock" = reportQuery.data ? "api" : "mock";
 
-        const mappedSteps: ReasoningStep[] = res.reasoning_trace.map(
-          (rt, i) => ({
-            step: (rt as { step?: number }).step ?? i + 1,
-            thought:
-              (rt as { thought?: string }).thought ||
-              JSON.stringify(rt),
-          })
-        );
-
-        setReport({
-          ...mockReport,
-          id: res.report_id,
-          encounter_id: res.encounter_id,
-          diagnosis: res.diagnosis,
-          confidence: res.confidence,
-          evidence_summary: res.evidence_summary,
-          timeline_impact: res.timeline_impact,
-          plan: res.plan,
-          doctor_approval_status: res.approval_status as AIReport["doctor_approval_status"],
-          explainability: {
-            ...mockReport.explainability,
-            reasoning_trace: mappedSteps,
-            heatmap_url:
-              res.heatmap_urls.length > 0
-                ? res.heatmap_urls[0]
-                : undefined,
-          },
-          judge_verdict: res.judge_verdict
-            ? {
-                status: res.judge_verdict.verdict as "consensus" | "conflict",
-                conflicts: res.judge_verdict.contradictions,
-                low_confidence_items: res.judge_verdict.low_confidence_items,
-                missing_context: res.judge_verdict.missing_context,
-              }
-            : mockReport.judge_verdict,
-        });
-        setFindings(mappedFindings);
-        setReasoningSteps(mappedSteps);
-        setApprovalStatus(
-          res.approval_status as typeof approvalStatus
-        );
-        setDataSource("api");
-
-        // Try fetching patient info
-        try {
-          const patientRes = await apiClient.getPatient(res.patient_id);
-          if (!cancelled) {
-            setPatient({
-              id: patientRes.id,
-              name: patientRes.name,
-              dob: patientRes.date_of_birth,
-              gender: patientRes.gender as "male" | "female" | "other",
-              medical_record_number:
-                patientRes.medical_record_number || "",
-            });
-          }
-        } catch {
-          // Keep mock patient if individual fetch fails
-        }
-      } catch {
-        if (cancelled) return;
-        // Fall back to mock data
-        setReport(mockReport);
-        setFindings(mockFindings);
-        setReasoningSteps(mockReasoningSteps);
-        setPatient(mockPatient);
-        setDataSource("mock");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  // Map API data → frontend types, fallback to mock
+  const report: AIReport = useMemo(() => {
+    if (reportQuery.data) {
+      const mapped = mapApiResponseToAIReport(reportQuery.data);
+      return mapped;
     }
+    return mockReport;
+  }, [reportQuery.data]);
 
-    fetchReport();
-    return () => {
-      cancelled = true;
-    };
-  }, [reportId]);
+  const findings: Finding[] = useMemo(() => {
+    if (reportQuery.data) {
+      return reportQuery.data.findings.map(mapApiFinding);
+    }
+    return mockFindings;
+  }, [reportQuery.data]);
+
+  const reasoningSteps: ReasoningStep[] = useMemo(() => {
+    if (reportQuery.data) {
+      return mapApiReasoningTrace(reportQuery.data.reasoning_trace);
+    }
+    return mockReasoningSteps;
+  }, [reportQuery.data]);
+
+  const patient = useMemo(() => {
+    if (patientQuery.data) {
+      return mapApiPatient(patientQuery.data);
+    }
+    return mockPatient;
+  }, [patientQuery.data]);
+
+  // Sync approval status from API data
+  useMemo(() => {
+    if (reportQuery.data) {
+      setApprovalStatus(reportQuery.data.approval_status as typeof approvalStatus);
+    }
+  }, [reportQuery.data]);
 
   // ── Approval handlers (API-backed) ─────────────────────
 
@@ -151,24 +101,13 @@ export default function CasePage({
     notes?: string
   ) => {
     if (dataSource === "api") {
-      setApprovalLoading(true);
-      setApprovalError(null);
-      try {
-        await apiClient.approveReport({
-          report_id: report.id,
-          status,
-          doctor_notes: notes,
-        });
-        setApprovalStatus(status);
-      } catch (err) {
-        setApprovalError(
-          err instanceof Error ? err.message : "Approval failed"
-        );
-        // Still update locally
-        setApprovalStatus(status);
-      } finally {
-        setApprovalLoading(false);
-      }
+      approveReportMutation.mutate(
+        { report_id: report.id, status, doctor_notes: notes },
+        {
+          onSuccess: () => setApprovalStatus(status),
+          onError: () => setApprovalStatus(status), // Still update locally
+        }
+      );
     } else {
       setApprovalStatus(status);
     }
@@ -295,10 +234,10 @@ export default function CasePage({
             <FindingsPanel
               findings={findings}
               differentialDiagnoses={
-                report.specialist_outputs.image_analysis?.differential_diagnoses
+                report.specialist_outputs?.image_analysis?.differential_diagnoses
               }
               recommendedFollowup={
-                report.specialist_outputs.image_analysis?.recommended_followup
+                report.specialist_outputs?.image_analysis?.recommended_followup
               }
             />
           </div>
@@ -326,7 +265,7 @@ export default function CasePage({
             ))}
           </div>
 
-          {report.specialist_outputs.text_reasoning?.contraindication_check && (
+          {!!report.specialist_outputs?.text_reasoning?.contraindication_check && (
             <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800">
               <CheckCircle2 size={14} className="text-accent-emerald" />
               <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium">
@@ -342,7 +281,7 @@ export default function CasePage({
         </section>
 
         {/* ── Historical Context ──────────────────── */}
-        {report.specialist_outputs.history_search && (
+        {report.specialist_outputs?.history_search && (
           <section className="mb-6 p-5 rounded-2xl bg-white dark:bg-surface-dark-2 border border-gray-200 dark:border-gray-800 neo-shadow">
             <h2 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
               <Clock size={16} className="text-brand-500" aria-hidden="true" />
@@ -350,11 +289,11 @@ export default function CasePage({
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 italic">
               &ldquo;
-              {report.specialist_outputs.history_search.timeline_context}
+              {report.specialist_outputs?.history_search?.timeline_context}
               &rdquo;
             </p>
             <div className="space-y-2">
-              {report.specialist_outputs.history_search.relevant_records.map(
+              {report.specialist_outputs?.history_search?.relevant_records.map(
                 (rec, i) => (
                   <div
                     key={i}
@@ -397,16 +336,16 @@ export default function CasePage({
         <section>
           <ApprovalBar
             status={approvalStatus}
-            loading={approvalLoading}
+            loading={approveReportMutation.isPending}
             onApprove={(notes) => handleApproval("approved", notes)}
             onReject={(notes) => handleApproval("rejected", notes)}
             onEdit={(notes) => handleApproval("edited", notes)}
           />
-          {approvalError && (
+          {approveReportMutation.error && (
             <div className="mt-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-900/10 border border-rose-200 dark:border-rose-800">
               <AlertTriangle size={14} className="text-accent-rose flex-shrink-0" />
               <p className="text-xs text-rose-700 dark:text-rose-400">
-                {approvalError}
+                {approveReportMutation.error.message}
               </p>
             </div>
           )}

@@ -4,8 +4,7 @@ import React, { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { cn, formatDate } from "@/lib/utils";
 import { LoadingAnimation } from "@/components/shared/LoadingAnimation";
-import { usePatients } from "@/lib/hooks";
-import { apiClient } from "@/lib/api/client";
+import { usePatients, useCreatePatient } from "@/lib/hooks";
 import type { ApiCreatePatientRequest } from "@/lib/api/types";
 import { ROUTES } from "@/lib/constants";
 import {
@@ -20,11 +19,11 @@ import {
 } from "lucide-react";
 
 export default function PatientsPage() {
-  const { data, loading, error, refetch } = usePatients();
+  const { data, isLoading: loading, error: queryError, refetch } = usePatients();
+  const error = queryError?.message ?? null;
+  const createPatient = useCreatePatient();
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
 
   // Create form state
   const [newName, setNewName] = useState("");
@@ -34,27 +33,21 @@ export default function PatientsPage() {
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
-    setCreateError(null);
-    setCreateLoading(true);
-    try {
-      const req: ApiCreatePatientRequest = {
-        name: newName,
-        date_of_birth: newDob,
-        gender: newGender,
-        medical_record_number: newMrn || undefined,
-      };
-      await apiClient.createPatient(req);
-      setShowCreate(false);
-      setNewName("");
-      setNewDob("");
-      setNewGender("male");
-      setNewMrn("");
-      refetch();
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Failed to create patient");
-    } finally {
-      setCreateLoading(false);
-    }
+    const req: ApiCreatePatientRequest = {
+      name: newName,
+      date_of_birth: newDob,
+      gender: newGender,
+      medical_record_number: newMrn || undefined,
+    };
+    createPatient.mutate(req, {
+      onSuccess: () => {
+        setShowCreate(false);
+        setNewName("");
+        setNewDob("");
+        setNewGender("male");
+        setNewMrn("");
+      },
+    });
   }
 
   const patients = data?.patients ?? [];
@@ -117,7 +110,7 @@ export default function PatientsPage() {
           <AlertCircle size={16} className="flex-shrink-0" />
           <span>{error}</span>
           <button
-            onClick={refetch}
+            onClick={() => refetch()}
             className="ml-auto text-xs font-medium underline"
           >
             Retry
@@ -183,10 +176,10 @@ export default function PatientsPage() {
               </button>
             </div>
 
-            {createError && (
+            {createPatient.error && (
               <div className="flex items-center gap-2 p-3 mb-4 rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-sm">
                 <AlertCircle size={14} />
-                <span>{createError}</span>
+                <span>{createPatient.error.message}</span>
               </div>
             )}
 
@@ -258,11 +251,11 @@ export default function PatientsPage() {
               </div>
               <button
                 type="submit"
-                disabled={createLoading}
+                disabled={createPatient.isPending}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-brand-500 text-white font-medium text-sm hover:bg-brand-600 transition disabled:opacity-50"
               >
                 <Plus size={16} />
-                {createLoading ? "Creating…" : "Create Patient"}
+                {createPatient.isPending ? "Creating…" : "Create Patient"}
               </button>
             </form>
           </div>
