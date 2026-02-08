@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { CitationsSidebar } from "@/components/agent/CitationsSidebar";
 import { ChatArea } from "@/components/agent/ChatArea";
 import { ChatInput } from "@/components/agent/ChatInput";
+import { ExamplePrompts } from "@/components/agent/ExamplePrompts";
 import { AgentStatusIndicator } from "@/components/shared/AgentStatusIndicator";
 import { PatientSelector } from "@/components/agent/PatientSelector";
 import { apiClient } from "@/lib/api/client";
@@ -24,6 +25,10 @@ import {
 
 export default function AgentPage() {
   const searchParams = useSearchParams();
+
+  // Local state for controlled chat input
+  const [inputValue, setInputValue] = useState("");
+  const [showExamples, setShowExamples] = useState(true);
 
   // Zustand chat store
   const messages = useChatStore((s) => s.messages);
@@ -195,7 +200,14 @@ export default function AgentPage() {
     setMessages([]);
     setCitations([]);
     setAgentStatus("idle");
+    setInputValue("");
+    setShowExamples(true);
   }, [setMessages, setCitations, setAgentStatus]);
+
+  const handleSelectExample = useCallback((prompt: string) => {
+    setInputValue(prompt);
+    setShowExamples(false);
+  }, []);
 
   return (
     <div className="flex h-screen pt-16 bg-gray-50 dark:bg-surface-dark">
@@ -280,8 +292,19 @@ export default function AgentPage() {
 
         {/* Chat input */}
         <div className="p-4 bg-white dark:bg-surface-dark-2 border-t border-gray-200 dark:border-gray-800">
+          {/* Show example prompts when no messages yet */}
+          {messages.length === 0 && showExamples && currentPatient && (
+            <ExamplePrompts
+              onSelectExample={handleSelectExample}
+              onDismiss={() => setShowExamples(false)}
+              className="mb-4"
+            />
+          )}
+
           <ChatInput
             onSend={handleSend}
+            value={inputValue}
+            onValueChange={setInputValue}
             disabled={
               (agentStatus !== "idle" && agentStatus !== "complete" && agentStatus !== "error") ||
               !currentPatient

@@ -16,19 +16,27 @@ interface ChatInputProps {
   onSend: (message: string, attachments?: File[]) => void;
   disabled?: boolean;
   className?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
 }
 
-export function ChatInput({ onSend, disabled, className }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, className, value: externalValue, onValueChange }: ChatInputProps) {
   const [text, setText] = useState("");
+  const isControlled = externalValue !== undefined;
+  const currentText = isControlled ? externalValue : text;
   const [files, setFiles] = useState<File[]>([]);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSend = () => {
-    if (!text.trim() && files.length === 0) return;
-    onSend(text.trim(), files.length > 0 ? files : undefined);
-    setText("");
+    if (!currentText.trim() && files.length === 0) return;
+    onSend(currentText.trim(), files.length > 0 ? files : undefined);
+    if (isControlled) {
+      onValueChange?.("");
+    } else {
+      setText("");
+    }
     setFiles([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -159,8 +167,14 @@ export function ChatInput({ onSend, disabled, className }: ChatInputProps) {
         <textarea
           id="chat-input"
           ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+          value={currentText}
+          onChange={(e) => {
+            if (isControlled) {
+              onValueChange?.(e.target.value);
+            } else {
+              setText(e.target.value);
+            }
+          }}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           placeholder="Describe the clinical case or ask a question..."
@@ -187,11 +201,11 @@ export function ChatInput({ onSend, disabled, className }: ChatInputProps) {
         {/* Send button */}
         <button
           onClick={handleSend}
-          disabled={disabled || (!text.trim() && files.length === 0)}
+          disabled={disabled || (!currentText.trim() && files.length === 0)}
           aria-label="Send message"
           className={cn(
             "p-2.5 rounded-xl transition-all duration-200",
-            text.trim() || files.length > 0
+            currentText.trim() || files.length > 0
               ? "bg-brand-500 hover:bg-brand-600 text-white shadow-lg shadow-brand-500/25"
               : "bg-gray-100 dark:bg-surface-dark-3 text-gray-400 cursor-not-allowed"
           )}
