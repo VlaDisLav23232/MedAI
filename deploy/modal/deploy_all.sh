@@ -47,6 +47,13 @@ deploy_siglip() {
     echo ""
 }
 
+deploy_medasr() {
+    echo "🚀 Deploying MedASR (medical speech recognition)..."
+    modal deploy "$SCRIPT_DIR/medasr.py"
+    echo "✅ MedASR deployed!"
+    echo ""
+}
+
 # Parse arguments
 TARGET="${1:-all}"
 
@@ -55,11 +62,13 @@ case "$TARGET" in
     27b)    deploy_27b ;;
     hear)   deploy_hear ;;
     siglip) deploy_siglip ;;
+    medasr) deploy_medasr ;;
     all)
         deploy_4b
         deploy_27b
         deploy_hear
         deploy_siglip
+        deploy_medasr
         echo "═══════════════════════════════════════════"
         echo "  All models deployed! 🎉"
         echo ""
@@ -71,10 +80,11 @@ case "$TARGET" in
         echo "    MEDGEMMA_27B_ENDPOINT=https://your-username--medai-medgemma-27b-medgemma27b-predict.modal.run"
         echo "    HEAR_ENDPOINT=https://your-username--medai-hear-audio-hearaudio-predict.modal.run"
         echo "    MEDSIGLIP_ENDPOINT=https://your-username--medai-siglip-explainability-siglipexplainability-explain.modal.run"
+        echo "    MEDASR_ENDPOINT=https://your-username--medai-medasr-medasr-predict.modal.run"
         echo "═══════════════════════════════════════════"
         ;;
     *)
-        echo "Usage: $0 [4b|27b|hear|siglip|all]"
+        echo "Usage: $0 [4b|27b|hear|siglip|medasr|all]"
         exit 1
         ;;
 esac
