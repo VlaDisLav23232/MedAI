@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -28,6 +29,7 @@ from medai.domain.entities import (
     ConfidenceMethod,
     Finding,
     FinalReport,
+    JudgmentResult,
     JudgeVerdict,
     PipelineMetrics,
     SpecialistResults,
@@ -39,6 +41,24 @@ from medai.domain.schemas import CaseAnalysisRequest
 from medai.services.tool_registry import ToolRegistry
 
 logger = structlog.get_logger()
+
+# ── Helpers ────────────────────────────────────────────────
+
+# Matches data:image/...;base64,<long_base64>  inside JSON string values.
+_BASE64_DATA_URI_RE = re.compile(
+    r'"data:image/[^;]+;base64,[A-Za-z0-9+/=]+"'
+)
+
+
+def _strip_base64_data_uris(content: str) -> str:
+    """Replace base64 data URIs with a placeholder to save tokens.
+
+    The full binary data is preserved in ``SpecialistResults`` for
+    heatmap extraction in ``cases.py``.  Only the serialised text
+    sent back to Claude is trimmed.
+    """
+    return _BASE64_DATA_URI_RE.sub('"[base64_image_data_stripped]"', content)
+
 
 ORCHESTRATOR_SYSTEM_PROMPT = """\
 You are a medical AI orchestrator. A doctor has submitted a patient case for analysis.
@@ -54,6 +74,8 @@ RULES:
 3. Use text_reasoning when patient history, lab results, or complex clinical questions are present.
 4. Use audio_analysis only when audio recordings are provided.
 5. You may call DIFFERENT tools in parallel (one image_analysis + one history_search, etc.).
+5b. Use image_explainability alongside image_analysis when medical images are provided — \
+it generates spatial heatmaps showing which regions triggered each finding. Call both in parallel.
 6. NEVER call the same tool more than once per turn. One call per tool name per iteration.
 7. Call text_reasoning ONCE with all available context — do NOT split into multiple calls.
 8. After receiving all tool results, synthesize a BRIEF final diagnosis (under 300 words).
@@ -127,32 +149,63 @@ class ClaudeOrchestrator(BaseOrchestrator):
         t0 = time.monotonic()
         logger.info("⚖️  PHASE: JUDGE", phase="JUDGE")
 
-        judgment = await self._judge.evaluate(request, specialist_results)
+        if not self._settings.judge_enabled:
+            logger.info("⏭️  JUDGE_SKIPPED (judge_enabled=false)", phase="JUDGE")
+            judgment = JudgmentResult(
+                verdict=JudgeVerdict.CONSENSUS,
+                confidence=0.7,
+                reasoning="Judge disabled by configuration — returning default consensus.",
+                contradictions=[],
+                low_confidence_items=[],
+                missing_context=[],
+                requery_tools=[],
+            )
+        else:
+            judgment = await self._judge.evaluate(request, specialist_results)
 
         # ── Phase 4b: Re-query if conflict ──
         cycle = 0
+        # Track which tools already produced a valid result — never re-run them
+        _succeeded_tools = set(specialist_results.results.keys())
         while (
-            judgment.verdict == JudgeVerdict.CONFLICT
+            self._settings.judge_enabled
+            and judgment.verdict == JudgeVerdict.CONFLICT
             and judgment.requery_tools
             and cycle < self._settings.max_judgment_cycles
         ):
             cycle += 1
+            # Filter out tools that already succeeded — only re-run failures
+            requery_needed = [
+                t for t in judgment.requery_tools
+                if t.value not in _succeeded_tools
+            ]
+            if not requery_needed:
+                logger.info(
+                    "⏭️  REQUERY_SKIPPED — all requested tools already succeeded",
+                    phase="JUDGE",
+                    cycle=cycle,
+                    requested=[t.value for t in judgment.requery_tools],
+                )
+                break
+
             logger.info(
                 "🔄 REQUERY_CYCLE",
                 phase="JUDGE",
                 cycle=cycle,
-                tools=judgment.requery_tools,
+                tools=[t.value for t in requery_needed],
+                skipped=[t.value for t in judgment.requery_tools if t not in requery_needed],
             )
 
             additional_results = await self.dispatch_tools(
-                tool_names=judgment.requery_tools,
+                tool_names=requery_needed,
                 tool_inputs={
                     tool: self._build_requery_input(tool, request, specialist_results)
-                    for tool in judgment.requery_tools
+                    for tool in requery_needed
                 },
             )
             specialist_results.results.update(additional_results.results)
             specialist_results.errors.update(additional_results.errors)
+            _succeeded_tools.update(additional_results.results.keys())
 
             judgment = await self._judge.evaluate(request, specialist_results)
 
@@ -372,6 +425,10 @@ class ClaudeOrchestrator(BaseOrchestrator):
                 )
 
                 content = output.model_dump_json() if hasattr(output, "model_dump_json") else json.dumps(output)
+                # Strip base64 data URIs to avoid blowing up the Claude
+                # context window. The full data is preserved in results
+                # for heatmap extraction in cases.py.
+                content = _strip_base64_data_uris(content)
                 return {
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
@@ -527,6 +584,10 @@ class ClaudeOrchestrator(BaseOrchestrator):
         elif tool == ToolName.AUDIO_ANALYSIS and request.audio_urls:
             base_input["audio_url"] = request.audio_urls[0]
 
+        elif tool == ToolName.IMAGE_EXPLAINABILITY and request.image_urls:
+            base_input["image_url"] = request.image_urls[0]
+            base_input["modality_hint"] = "xray"  # safe default
+
         return base_input
 
 
@@ -551,6 +612,11 @@ class MockOrchestrator(BaseOrchestrator):
             tool_inputs[ToolName.IMAGE_ANALYSIS] = {
                 "image_url": request.image_urls[0],
                 "clinical_context": request.clinical_context,
+            }
+            tools_to_call.append(ToolName.IMAGE_EXPLAINABILITY)
+            tool_inputs[ToolName.IMAGE_EXPLAINABILITY] = {
+                "image_url": request.image_urls[0],
+                "modality_hint": "xray",
             }
 
         if request.audio_urls:

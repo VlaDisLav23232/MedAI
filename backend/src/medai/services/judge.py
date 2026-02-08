@@ -13,6 +13,8 @@ from enum import Enum
 from typing import Any, Literal
 
 import structlog
+
+from medai.services.orchestrator import _strip_base64_data_uris
 from anthropic import AsyncAnthropic, transform_schema
 from pydantic import BaseModel, Field
 
@@ -47,7 +49,7 @@ class JudgmentResponse(BaseModel):
     contradictions: list[str] = Field(default_factory=list, description="Contradictions found between specialist outputs")
     low_confidence_items: list[str] = Field(default_factory=list, description="Items with confidence below threshold")
     missing_context: list[str] = Field(default_factory=list, description="Missing information that would improve analysis")
-    requery_tools: list[Literal["image_analysis", "text_reasoning", "audio_analysis", "history_search"]] = Field(
+    requery_tools: list[Literal["image_analysis", "text_reasoning", "audio_analysis", "history_search", "image_explainability"]] = Field(
         default_factory=list,
         description="Tool names to re-run if verdict is conflict",
     )
@@ -63,14 +65,26 @@ specialist AI tools that have analyzed a patient case, and determine whether the
 is consensus or conflict.
 
 You must evaluate:
-1. CROSS-MODAL CONSISTENCY: Do image findings align with text reasoning and audio analysis?
+1. CROSS-MODAL CONSISTENCY: Do image findings align with text reasoning (if both present)?
 2. CONFIDENCE LEVELS: Flag any finding with confidence below {confidence_threshold}.
-3. HISTORICAL CONSISTENCY: Do current findings make sense given the patient timeline?
+3. HISTORICAL CONSISTENCY: Do current findings make sense given the patient timeline (if available)?
 4. GUIDELINE ADHERENCE: Does the suggested plan follow standard clinical guidelines?
 
-IMPORTANT: You are NOT diagnosing the patient. You are judging whether the specialist \
-tools agree with each other and whether the combined output is reliable enough to \
-present to the doctor.
+IMPORTANT RULES:
+- You are NOT diagnosing the patient. You are judging whether the specialist \
+tools AGREE with each other and whether the combined output is reliable.
+- If only ONE tool ran successfully, there is nothing to contradict — lean toward CONSENSUS \
+with a note that additional modalities would strengthen confidence.
+- A tool error (timeout, parsing failure) is NOT a contradiction — it is missing data. \
+Do not treat missing tools as conflicts. Simply note them in missing_context.
+- Placeholder text like "[base64_image_data_stripped]" in outputs means the image binary \
+was removed to save space — the analysis was still performed. Do NOT flag this as a problem.
+- Default to CONSENSUS unless you find a genuine clinical disagreement between two or more \
+tool outputs (e.g. image says "no consolidation" but text reasoning says "consolidation present").
+- When setting confidence, use the FULL range: 0.5 (very uncertain) to 0.95 (rock solid). \
+A routine case with one successful tool should be around 0.75-0.85.
+- Only recommend requery_tools if there is a SPECIFIC clinical question that a re-run \
+could answer. Do NOT reflexively requery failed tools.
 """
 
 
@@ -105,7 +119,9 @@ class ClaudeJudge(BaseJudge):
             f"Clinical Context: {request.clinical_context}\n\n"
             f"## Specialist Tool Results\n{results_text}\n\n"
             f"## Your Task\n"
-            f"Evaluate these results for consensus or conflict."
+            f"Evaluate these results for consensus or conflict. "
+            f"Remember: tool errors or missing tools are NOT contradictions — "
+            f"only flag conflict if two successful tools clinically disagree."
         )
 
         logger.info("judge_evaluating", patient_id=request.patient_id)
@@ -169,7 +185,9 @@ class ClaudeJudge(BaseJudge):
                 # Internal entries like _synthesis are plain strings
                 sections.append(f"### {tool_name}\n{output}")
             elif hasattr(output, "model_dump_json"):
-                sections.append(f"### {tool_name}\n```json\n{output.model_dump_json(indent=2)}\n```")
+                raw = output.model_dump_json(indent=2)
+                sanitised = _strip_base64_data_uris(raw)
+                sections.append(f"### {tool_name}\n```json\n{sanitised}\n```")
             else:
                 sections.append(f"### {tool_name}\n{output}")
         for tool_name, error in results.errors.items():

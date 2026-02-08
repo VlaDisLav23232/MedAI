@@ -105,6 +105,7 @@ class ToolName(str, Enum):
     TEXT_REASONING = "text_reasoning"
     AUDIO_ANALYSIS = "audio_analysis"
     HISTORY_SEARCH = "history_search"
+    IMAGE_EXPLAINABILITY = "image_explainability"
 
 
 class UserRole(str, Enum):
@@ -120,6 +121,7 @@ class ConfidenceMethod(str, Enum):
     LOGPROB_SEQUENCE = "logprob_sequence"
     JUDGE_ASSESSMENT = "judge_assessment"
     ENSEMBLE_AGREEMENT = "ensemble_agreement"
+    SIGLIP_PATCH_SIMILARITY = "siglip_patch_similarity"
     NOT_AVAILABLE = "not_available"
 
 
@@ -348,12 +350,87 @@ class HistorySearchOutput(BaseModel):
     timeline_context: str
 
 
+class ConditionScore(BaseModel):
+    """A single MedSigLIP zero-shot condition score with optional heatmap.
+
+    `probability` is a softmax-normalised score across all candidate labels
+    (relative ranking), matching the official MedSigLIP model card example.
+    `sigmoid_score` is the per-condition independent sigmoid value.
+    `raw_logit` is the unnormalised contrastive logit from the model.
+
+    All three are REAL model outputs (deterministic dot-product scores),
+    NOT LLM-generated text predictions.
+
+    The `heatmap_data_uri` is a base64-encoded PNG of the per-patch
+    activation map (pure colormap, no original image overlay).
+    Frontend or test scripts composite the overlay at display time.
+    """
+    label: str = Field(description="Condition description used as text prompt")
+    probability: float = Field(
+        ge=0.0, le=1.0,
+        description=(
+            "Softmax-normalised score across candidate labels (relative ranking). "
+            "Sums to 1.0 across all conditions in the same request."
+        ),
+    )
+    sigmoid_score: float | None = Field(
+        default=None,
+        ge=0.0, le=1.0,
+        description=(
+            "Per-condition independent sigmoid score. "
+            "Near-zero for MedSigLIP due to logit scale — use probability for ranking."
+        ),
+    )
+    raw_logit: float | None = Field(
+        default=None,
+        description="Unnormalised contrastive logit from the model (for transparency).",
+    )
+    heatmap_data_uri: str | None = Field(
+        default=None,
+        description="Base64 data URI of the spatial activation heatmap (PNG)",
+    )
+
+
+class ImageExplainabilityOutput(BaseModel):
+    """Contract for Image Explainability Tool output (MedSigLIP).
+
+    Provides zero-shot condition scoring with spatial activation maps.
+    Probabilities use softmax normalisation across candidate labels
+    (relative ranking). Raw sigmoid scores and logits are also exposed
+    for full transparency.
+
+    `attention_heatmap_url` holds the top-scoring condition's heatmap
+    data URI, which triggers automatic extraction in cases.py.
+    """
+    tool: str = ToolName.IMAGE_EXPLAINABILITY
+    modality_detected: Modality
+    condition_scores: list[ConditionScore] = Field(default_factory=list)
+    attention_heatmap_url: str | None = Field(
+        default=None,
+        description="Top-scoring condition heatmap — auto-extracted into heatmap_urls",
+    )
+    embedding: list[float] | None = Field(
+        default=None,
+        description="SigLIP image embedding vector for future similarity search",
+    )
+    inference: InferenceMetadata | None = Field(
+        default=None,
+        description="Model provenance and stats",
+    )
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Aggregated Types
 # ═══════════════════════════════════════════════════════════════
 
 # Union of all tool outputs for type-safe handling
-ToolOutput = ImageAnalysisOutput | TextReasoningOutput | AudioAnalysisOutput | HistorySearchOutput
+ToolOutput = (
+    ImageAnalysisOutput
+    | TextReasoningOutput
+    | AudioAnalysisOutput
+    | HistorySearchOutput
+    | ImageExplainabilityOutput
+)
 
 
 class SpecialistResults(BaseModel):

@@ -1,0 +1,57 @@
+{
+  "scores": [
+    {
+      "label": "consolidation consistent with pneumonia",
+      "probability": 0.447592,
+      "sigmoid_score": 0.0003655,
+      "raw_logit": -7.9141
+    },
+    {
+      "label": "tuberculosis with cavitary lesion",
+      "probability": 0.185132,
+      "sigmoid_score": 0.00015116,
+      "raw_logit": -8.7969
+    },
+    {
+      "label": "pulmonary nodule or mass",
+      "probability": 0.169887,
+      "sigmoid_score": 0.00013876,
+      "raw_logit": -8.8828
+    },
+    {
+      "label": "pneumothorax with absent lung markings",
+      "probability": 0.057801,
+      "sigmoid_score": 4.721e-05,
+      "raw_logit": -9.9609
+    },
+    {
+      "label": "cardiomegaly with enlarged heart silhouette",
+      "probability": 0.055154,
+      "sigmoid_score": 4.506e-05,
+      "raw_logit": -10.0078
+    },
+    {
+      "label": "normal healthy lung fields with no abnormality",
+      "probability": 0.046083,
+      "sigmoid_score": 3.761e-05,
+      "raw_logit": -10.1875
+    },
+    {
+      "label": "pleural effusion with blunting of costophrenic angle",
+      "probability": 0.02585,
+      "sigmoid_score": 2.11e-05,
+      "raw_logit": -10.7656
+    },
+    {
+      "label": "atelectasis with volume loss",
+      "probability": 0.0125,
+      "sigmoid_score": 1.019e-05,
+      "raw_logit": -11.4922
+    }
+  ],
+  "inference_time_ms": 191.6,
+  "model_id": "google/medsiglip-448",
+  "image_embedding": "[1152 dims]",
+  "heatmap_count": 5,
+  "_test_wall_time_ms": 3696.0
+}

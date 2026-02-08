@@ -109,7 +109,7 @@ class TestHealthEndpoint:
         assert data["status"] == "ok"
         assert "version" in data
         assert "tools_registered" in data
-        assert len(data["tools_registered"]) == 4  # all mock tools
+        assert len(data["tools_registered"]) == 5  # all mock tools
         assert "image_analysis" in data["tools_registered"]
         assert "text_reasoning" in data["tools_registered"]
 

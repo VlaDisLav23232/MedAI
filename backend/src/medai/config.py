@@ -76,6 +76,12 @@ class Settings(BaseSettings):
         description="HeAR audio encoder endpoint",
     )
 
+    # ── SigLIP Explainability ──────────────────────────────
+    siglip_taxonomy_path: Path = Field(
+        default=Path(__file__).parent / "tools" / "condition_taxonomy.json",
+        description="Path to per-modality condition label taxonomy JSON",
+    )
+
     # ── Database ───────────────────────────────────────────
     database_url: str = Field(
         default="sqlite+aiosqlite:///./medai.db",
@@ -113,11 +119,21 @@ class Settings(BaseSettings):
     # ── Budget Guard ───────────────────────────────────────
     max_judgment_cycles: int = Field(
         default=2,
-        description="Max re-query cycles per case (budget protection)",
+        description="Max re-query cycles per case (budget protection). Set 0 to disable requery.",
     )
     confidence_threshold: float = Field(
         default=0.6,
         description="Below this confidence, findings trigger re-analysis",
+    )
+
+    # ── Feature Toggles ───────────────────────────────────
+    judge_enabled: bool = Field(
+        default=True,
+        description="Enable the Judge Agent. When False, pipeline skips judgment and returns consensus.",
+    )
+    enable_27b_reasoning: bool = Field(
+        default=True,
+        description="Enable MedGemma 27B text reasoning. When False, text_reasoning tool is not registered.",
     )
 
 
