@@ -10,6 +10,7 @@ from typing import AsyncGenerator
 
 import structlog
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from medai import __version__
@@ -56,6 +57,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         debug=settings.debug,
     )
+
+    # ── Static Files (local artifacts) ────────────────────
+    storage_path = settings.storage_local_path
+    storage_path.mkdir(parents=True, exist_ok=True)
+    app.mount("/storage", StaticFiles(directory=str(storage_path)), name="storage")
 
     # ── CORS (restricted to configured origins) ────────────
     app.add_middleware(

@@ -209,3 +209,5 @@ __marimo__/
 # plan-agenticMedAI
 plan.md
 plan.pdf
+
+backend/medai.db
