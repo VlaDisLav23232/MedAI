@@ -7,6 +7,8 @@ swap via dependency injection, zero code changes needed.
 
 from __future__ import annotations
 
+from typing import Any
+
 from medai.domain.entities import (
     ApprovalStatus,
     FinalReport,
@@ -35,6 +37,15 @@ class InMemoryPatientRepository(BasePatientRepository):
 
     async def list_all(self) -> list[Patient]:
         return list(self._store.values())
+
+    async def update(self, patient_id: str, **fields: Any) -> Patient | None:
+        patient = self._store.get(patient_id)
+        if patient is None:
+            return None
+        for key, value in fields.items():
+            if value is not None and hasattr(patient, key):
+                setattr(patient, key, value)
+        return patient
 
     def seed(self, patients: list[Patient]) -> None:
         """Seed the store with initial data (for dev/testing)."""

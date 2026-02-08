@@ -123,6 +123,15 @@ class SqlAlchemyPatientRepository(BasePatientRepository):
         result = await self._session.execute(select(PatientRow))
         return [self._to_entity(row) for row in result.scalars().all()]
 
+    async def update(self, patient_id: str, **fields: Any) -> Patient | None:
+        row = await self._session.get(PatientRow, patient_id)
+        if row is None:
+            return None
+        for key, value in fields.items():
+            if value is not None and hasattr(row, key):
+                setattr(row, key, value)
+        await self._session.flush()
+        return self._to_entity(row)
     @staticmethod
     def _to_entity(row: PatientRow) -> Patient:
         return Patient(
@@ -258,11 +267,21 @@ class SqlAlchemyReportRepository(BaseReportRepository):
         return self._to_entity(merged)
 
     async def update_approval(
-        self, report_id: str, status: str, doctor_notes: str | None = None
+        self, report_id: str, status: str, doctor_notes: str | None = None,
+        edits: dict[str, Any] | None = None,
     ) -> FinalReport | None:
         values: dict[str, Any] = {"approval_status": status}
         if doctor_notes is not None:
             values["doctor_notes"] = doctor_notes
+
+        # Apply edits to mutable report fields
+        if edits:
+            editable_fields = {
+                "diagnosis", "evidence_summary", "plan", "timeline_impact",
+            }
+            for field, value in edits.items():
+                if field in editable_fields:
+                    values[field] = value
 
         await self._session.execute(
             update(FinalReportRow)

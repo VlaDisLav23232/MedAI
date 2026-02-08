@@ -40,10 +40,10 @@ export function CTA() {
             <ArrowRight size={16} />
           </Link>
           <Link
-            href="/case/demo"
+            href="/patients"
             className="inline-flex items-center gap-2 px-8 py-4 bg-white/10 text-white font-semibold rounded-2xl border border-white/20 hover:bg-white/20 transition-all duration-200 active:scale-[0.98]"
           >
-            Explore Demo Case
+            Browse Patients
           </Link>
         </div>
 

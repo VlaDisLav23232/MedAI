@@ -16,6 +16,7 @@ import {
   ChevronRight,
   AlertCircle,
   X,
+  Bot,
 } from "lucide-react";
 
 export default function PatientsPage() {
@@ -127,9 +128,8 @@ export default function PatientsPage() {
             </p>
           )}
           {filtered.map((p) => (
-            <Link
+            <div
               key={p.id}
-              href={ROUTES.timeline(p.id)}
               className="flex items-center gap-4 p-4 rounded-2xl glass-card hover:neo-shadow transition group"
             >
               <div className="w-10 h-10 rounded-full bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center flex-shrink-0">
@@ -150,11 +150,27 @@ export default function PatientsPage() {
                   </span>
                 </div>
               </div>
-              <ChevronRight
-                size={16}
-                className="text-gray-400 group-hover:text-brand-500 transition flex-shrink-0"
-              />
-            </Link>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Link
+                  href={`/agent?patientId=${p.id}`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20 hover:bg-brand-100 dark:hover:bg-brand-900/30 transition"
+                  title="Start Co-Pilot for this patient"
+                >
+                  <Bot size={12} />
+                  Co-Pilot
+                </Link>
+                <Link
+                  href={ROUTES.timeline(p.id)}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-surface-dark-2 transition"
+                  title="View timeline"
+                >
+                  <ChevronRight
+                    size={16}
+                    className="text-gray-400 group-hover:text-brand-500 transition"
+                  />
+                </Link>
+              </div>
+            </div>
           ))}
         </div>
       )}

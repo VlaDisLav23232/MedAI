@@ -5,7 +5,6 @@ import Link from "next/link";
 import { cn, formatDate } from "@/lib/utils";
 import { SeverityBadge } from "@/components/shared/SeverityBadge";
 import { LoadingAnimation } from "@/components/shared/LoadingAnimation";
-import { mockPatient, mockTimelineEvents } from "@/lib/mock-data";
 import { useTimeline, usePatient } from "@/lib/hooks";
 import { mapApiTimelineEvent, mapApiPatient } from "@/lib/api/mappers";
 import type { TimelineEvent } from "@/lib/types";
@@ -23,8 +22,6 @@ import {
   ChevronRight,
   ChevronDown,
   AlertCircle,
-  Wifi,
-  WifiOff,
   FileText,
 } from "lucide-react";
 
@@ -121,9 +118,8 @@ export default function TimelinePage({
   const patientQuery = usePatient(patientId);
 
   const loading = timelineQuery.isLoading || patientQuery.isLoading;
-  const dataSource = timelineQuery.data ? "api" : "mock";
 
-  // Map API data to frontend types, fallback to mock
+  // Map API data to frontend types
   const events: TimelineEvent[] = useMemo(() => {
     if (timelineQuery.data) {
       return timelineQuery.data.events.map((e) => {
@@ -137,14 +133,14 @@ export default function TimelinePage({
         };
       });
     }
-    return mockTimelineEvents;
+    return [];
   }, [timelineQuery.data]);
 
   const patient = useMemo(() => {
     if (patientQuery.data) {
       return mapApiPatient(patientQuery.data);
     }
-    return mockPatient;
+    return null;
   }, [patientQuery.data]);
 
   // ── Filtering & Grouping ───────────────────────────────
@@ -249,12 +245,12 @@ export default function TimelinePage({
             </div>
             <div>
               <span className="text-sm font-semibold text-gray-900 dark:text-white block">
-                {patient.name}
+                {patient?.name ?? "Loading…"}
               </span>
               <span className="text-xs text-gray-400">
-                {patient.medical_record_number} · DOB:{" "}
-                <time dateTime={patient.dob}>{formatDate(patient.dob)}</time>{" "}
-                · {patient.gender}
+                {patient?.medical_record_number ?? ""} · DOB:{" "}
+                <time dateTime={patient?.dob ?? ""}>{patient?.dob ? formatDate(patient.dob) : "—"}</time>{" "}
+                · {patient?.gender ?? ""}
               </span>
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -262,26 +258,7 @@ export default function TimelinePage({
                 {events.length} event
                 {events.length !== 1 ? "s" : ""} recorded
               </span>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium",
-                  dataSource === "api"
-                    ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
-                    : "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
-                )}
-                title={
-                  dataSource === "api"
-                    ? "Connected to backend API"
-                    : "Using demo data (backend unavailable)"
-                }
-              >
-                {dataSource === "api" ? (
-                  <Wifi size={10} />
-                ) : (
-                  <WifiOff size={10} />
-                )}
-                {dataSource === "api" ? "Live" : "Demo"}
-              </span>
+
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { cn, formatTime } from "@/lib/utils";
 import type { ChatMessage as ChatMessageType, ToolResult } from "@/lib/types";
 import {
@@ -54,23 +55,44 @@ function ToolResultItem({ result }: { result: ToolResult }) {
   );
 }
 
-/** Safely render inline markdown (bold, emoji) without dangerouslySetInnerHTML */
+/** Safely render inline markdown (bold, links, emoji) without dangerouslySetInnerHTML */
 function renderInline(text: string, isUser: boolean): React.ReactNode {
-  // Split on **bold** markers
-  const parts = text.split(/(\*\*.*?\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
+  // First handle markdown links [text](url)
+  const linkParts = text.split(/(\[.*?\]\(.*?\))/g);
+  return linkParts.map((segment, li) => {
+    const linkMatch = segment.match(/\[(.*?)\]\((.*?)\)/);
+    if (linkMatch) {
+      const [, linkText, linkHref] = linkMatch;
       return (
-        <strong key={i} className="font-semibold">
-          {part.slice(2, -2)}
-        </strong>
+        <Link
+          key={`link-${li}`}
+          href={linkHref}
+          className={cn(
+            "inline-flex items-center gap-1 font-semibold underline underline-offset-2",
+            isUser ? "text-white/90 hover:text-white" : "text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
+          )}
+        >
+          {linkText}
+        </Link>
       );
     }
-    // Highlight certain emoji
-    return part.split(/(✅|↑)/g).map((seg, j) => {
-      if (seg === "✅") return <span key={`${i}-${j}`} className="text-accent-emerald">✅</span>;
-      if (seg === "↑") return <span key={`${i}-${j}`} className="text-accent-rose">↑</span>;
-      return <React.Fragment key={`${i}-${j}`}>{seg}</React.Fragment>;
+
+    // Split on **bold** markers
+    const parts = segment.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={`${li}-${i}`} className="font-semibold">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      // Highlight certain emoji
+      return part.split(/(✅|↑)/g).map((seg, j) => {
+        if (seg === "✅") return <span key={`${li}-${i}-${j}`} className="text-accent-emerald">✅</span>;
+        if (seg === "↑") return <span key={`${li}-${i}-${j}`} className="text-accent-rose">↑</span>;
+        return <React.Fragment key={`${li}-${i}-${j}`}>{seg}</React.Fragment>;
+      });
     });
   });
 }

@@ -101,6 +101,14 @@ class PatientCreateRequest(BaseModel):
     medical_record_number: str | None = None
 
 
+class PatientUpdateRequest(BaseModel):
+    """Update an existing patient record. All fields optional."""
+    name: str | None = None
+    date_of_birth: str | None = None  # ISO date
+    gender: str | None = None
+    medical_record_number: str | None = None
+
+
 class PatientSummary(BaseModel):
     """Lightweight patient info for lists."""
     id: str

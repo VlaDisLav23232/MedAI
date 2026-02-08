@@ -24,6 +24,7 @@ from medai.domain.schemas import (
     PatientReportsResponse,
     PatientSummary,
     PatientTimelineResponse,
+    PatientUpdateRequest,
     ReportSummary,
     TimelineEventResponse,
 )
@@ -85,6 +86,23 @@ async def get_patient(
     if patient is None:
         raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
     return _patient_to_summary(patient)
+
+
+@router.put("/{patient_id}", response_model=PatientSummary)
+async def update_patient(
+    patient_id: str,
+    body: PatientUpdateRequest,
+    repo: BasePatientRepository = Depends(get_patient_repository),
+    _current_user: User = Depends(get_current_user),
+) -> PatientSummary:
+    """Update an existing patient's details (partial update)."""
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    updated = await repo.update(patient_id, **fields)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+    return _patient_to_summary(updated)
 
 
 @router.get("/{patient_id}/timeline", response_model=PatientTimelineResponse)

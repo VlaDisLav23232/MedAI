@@ -47,6 +47,13 @@ def create_seed_patients() -> list[Patient]:
             gender=Gender.FEMALE,
             medical_record_number="MRN-2024-003",
         ),
+        Patient(
+            id="PT-DEMO0004",
+            name="Dmytro Shevchenko",
+            date_of_birth=date(1958, 4, 29),
+            gender=Gender.MALE,
+            medical_record_number="MRN-2024-004",
+        ),
     ]
 
 
@@ -395,5 +402,148 @@ def create_seed_timeline_events() -> list[TimelineEvent]:
             ),
             source_type="imaging",
             metadata={"modality": "dermatology", "assessment": "benign compound nevus"},
+        ),
+
+        # ══════════════════════════════════════════════════
+        #  Dmytro Shevchenko (PT-DEMO0004) — Cardiology
+        #  Story: Chest pain → ACS workup → coronary artery disease
+        # ══════════════════════════════════════════════════
+
+        # Visit 1: Emergency presentation
+        TimelineEvent(
+            id="TL-SEED0024",
+            patient_id="PT-DEMO0004",
+            date=datetime(2025, 9, 20, 22, 0),
+            event_type=TimelineEventType.ENCOUNTER,
+            summary=(
+                "Emergency presentation — 67M, crushing substernal chest pain radiating to left arm "
+                "for 45 minutes. Associated diaphoresis and nausea. PMH: HTN (Losartan 50mg), "
+                "hyperlipidemia (Atorvastatin 20mg), ex-smoker (quit 5 years ago, 30-pack-year). "
+                "FH: father MI at 58. Vitals: BP 165/95, HR 102, SpO₂ 97%. ECG: ST elevation V1-V4."
+            ),
+            source_type="encounter",
+            metadata={
+                "chief_complaint": "acute chest pain",
+                "bp": "165/95",
+                "hr": 102,
+                "spo2": 97,
+                "ecg": "ST elevation V1-V4",
+            },
+        ),
+        TimelineEvent(
+            id="TL-SEED0025",
+            patient_id="PT-DEMO0004",
+            date=datetime(2025, 9, 20, 22, 15),
+            event_type=TimelineEventType.LAB,
+            summary=(
+                "STAT cardiac biomarkers: Troponin I 0.08 ng/mL (elevated, normal <0.04). "
+                "CK-MB 12 U/L (elevated). BNP 280 pg/mL. CBC: WBC 11.2×10⁹/L. "
+                "Creatinine 1.1 mg/dL. PT/INR 1.0. Lipid panel: TC 245, LDL 158, HDL 38, TG 210."
+            ),
+            source_type="lab",
+            metadata={"troponin": 0.08, "ckmb": 12, "bnp": 280, "ldl": 158},
+        ),
+        TimelineEvent(
+            id="TL-SEED0026",
+            patient_id="PT-DEMO0004",
+            date=datetime(2025, 9, 20, 22, 30),
+            event_type=TimelineEventType.IMAGING,
+            summary=(
+                "Bedside echocardiogram: anterior wall hypokinesis, LVEF ~40% (reduced). "
+                "No pericardial effusion. Mild mitral regurgitation. "
+                "Assessment: consistent with acute anterior STEMI."
+            ),
+            source_type="imaging",
+            metadata={"modality": "ultrasound", "lvef": 40, "wall_motion": "anterior hypokinesis"},
+        ),
+
+        # Visit 2: Post-PCI recovery
+        TimelineEvent(
+            id="TL-SEED0027",
+            patient_id="PT-DEMO0004",
+            date=datetime(2025, 9, 21, 6, 0),
+            event_type=TimelineEventType.PROCEDURE,
+            summary=(
+                "Urgent coronary angiography + PCI: LAD 95% stenosis with thrombus — "
+                "successful drug-eluting stent (DES) placement. RCA 40% stenosis (non-flow-limiting). "
+                "Post-PCI TIMI 3 flow. Access: right radial. No complications."
+            ),
+            source_type="procedure",
+            metadata={"stenosis_lad": 95, "stenosis_rca": 40, "stent": "DES", "timi_flow": 3},
+        ),
+        TimelineEvent(
+            id="TL-SEED0028",
+            patient_id="PT-DEMO0004",
+            date=datetime(2025, 9, 22, 8, 0),
+            event_type=TimelineEventType.LAB,
+            summary=(
+                "Post-PCI Day 1 labs: Peak Troponin I 8.2 ng/mL (confirming moderate-size MI). "
+                "CK-MB peaked at 95 U/L. Creatinine stable 1.1 mg/dL. "
+                "Hemoglobin 13.8 g/dL. Platelets 240×10⁹/L."
+            ),
+            source_type="lab",
+            metadata={"troponin_peak": 8.2, "ckmb_peak": 95, "creatinine": 1.1},
+        ),
+        TimelineEvent(
+            id="TL-SEED0029",
+            patient_id="PT-DEMO0004",
+            date=datetime(2025, 9, 23, 10, 0),
+            event_type=TimelineEventType.NOTE,
+            summary=(
+                "Discharge plan: DAPT (Aspirin 81mg + Clopidogrel 75mg × 12 months), "
+                "Atorvastatin increased to 80mg, Metoprolol 50mg BID, Ramipril 5mg daily. "
+                "Cardiac rehab referral. Follow-up echo in 6 weeks. No driving × 4 weeks."
+            ),
+            source_type="note",
+            metadata={
+                "medications": [
+                    "aspirin_81mg",
+                    "clopidogrel_75mg",
+                    "atorvastatin_80mg",
+                    "metoprolol_50mg_bid",
+                    "ramipril_5mg",
+                ],
+            },
+        ),
+
+        # Visit 3: 6-week follow-up
+        TimelineEvent(
+            id="TL-SEED0030",
+            patient_id="PT-DEMO0004",
+            date=datetime(2025, 11, 4, 9, 0),
+            event_type=TimelineEventType.ENCOUNTER,
+            summary=(
+                "6-week post-STEMI follow-up. Chest pain-free. Completing cardiac rehab phase 1. "
+                "Functional capacity improved — can walk 30 minutes without symptoms. BP 128/78, HR 62. "
+                "Adherent to all medications. Mild fatigue attributed to beta-blocker."
+            ),
+            source_type="encounter",
+            metadata={"chief_complaint": "post-STEMI follow-up", "bp": "128/78", "hr": 62},
+        ),
+        TimelineEvent(
+            id="TL-SEED0031",
+            patient_id="PT-DEMO0004",
+            date=datetime(2025, 11, 4, 10, 0),
+            event_type=TimelineEventType.IMAGING,
+            summary=(
+                "Follow-up echocardiogram: LVEF improved to 48% (from 40% at presentation). "
+                "Anterior wall still mildly hypokinetic but improved. No LV thrombus. "
+                "Mild mitral regurgitation (stable). Diastolic function grade I."
+            ),
+            source_type="imaging",
+            metadata={"modality": "ultrasound", "lvef": 48, "improvement": True},
+        ),
+        TimelineEvent(
+            id="TL-SEED0032",
+            patient_id="PT-DEMO0004",
+            date=datetime(2025, 11, 4, 10, 30),
+            event_type=TimelineEventType.LAB,
+            summary=(
+                "Follow-up labs: LDL 72 mg/dL (at target on high-dose statin). "
+                "HbA1c 5.6% (normal). Creatinine 1.0 mg/dL. BNP 85 pg/mL (improving). "
+                "Liver enzymes normal (no statin toxicity)."
+            ),
+            source_type="lab",
+            metadata={"ldl": 72, "hba1c": 5.6, "bnp": 85, "creatinine": 1.0},
         ),
     ]

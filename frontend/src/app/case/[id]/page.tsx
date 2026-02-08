@@ -8,14 +8,7 @@ import { ReasoningTrace } from "@/components/case/ReasoningTrace";
 import { ApprovalBar } from "@/components/case/ApprovalBar";
 import { ConfidenceBadge } from "@/components/shared/ConfidenceBadge";
 import { LoadingAnimation } from "@/components/shared/LoadingAnimation";
-import {
-  mockReport,
-  mockFindings,
-  mockReasoningSteps,
-  mockPatient,
-} from "@/lib/mock-data";
-import { useReport, useApproveReport } from "@/lib/hooks";
-import { usePatient } from "@/lib/hooks";
+import { useReport, useApproveReport, usePatient } from "@/lib/hooks";
 import {
   mapApiResponseToAIReport,
   mapApiFinding,
@@ -32,8 +25,6 @@ import {
   Stethoscope,
   AlertTriangle,
   ChevronRight,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
 
 export default function CasePage({
@@ -55,36 +46,34 @@ export default function CasePage({
   const patientQuery = usePatient(patientIdFromReport);
 
   const loading = reportQuery.isLoading;
-  const dataSource: "api" | "mock" = reportQuery.data ? "api" : "mock";
 
-  // Map API data → frontend types, fallback to mock
-  const report: AIReport = useMemo(() => {
+  // Map API data → frontend types
+  const report: AIReport | null = useMemo(() => {
     if (reportQuery.data) {
-      const mapped = mapApiResponseToAIReport(reportQuery.data);
-      return mapped;
+      return mapApiResponseToAIReport(reportQuery.data);
     }
-    return mockReport;
+    return null;
   }, [reportQuery.data]);
 
   const findings: Finding[] = useMemo(() => {
     if (reportQuery.data) {
       return reportQuery.data.findings.map(mapApiFinding);
     }
-    return mockFindings;
+    return [];
   }, [reportQuery.data]);
 
   const reasoningSteps: ReasoningStep[] = useMemo(() => {
     if (reportQuery.data) {
       return mapApiReasoningTrace(reportQuery.data.reasoning_trace);
     }
-    return mockReasoningSteps;
+    return [];
   }, [reportQuery.data]);
 
   const patient = useMemo(() => {
     if (patientQuery.data) {
       return mapApiPatient(patientQuery.data);
     }
-    return mockPatient;
+    return null;
   }, [patientQuery.data]);
 
   // Sync approval status from API data
@@ -100,17 +89,14 @@ export default function CasePage({
     status: "approved" | "rejected" | "edited",
     notes?: string
   ) => {
-    if (dataSource === "api") {
-      approveReportMutation.mutate(
-        { report_id: report.id, status, doctor_notes: notes },
-        {
-          onSuccess: () => setApprovalStatus(status),
-          onError: () => setApprovalStatus(status), // Still update locally
-        }
-      );
-    } else {
-      setApprovalStatus(status);
-    }
+    if (!report) return;
+    approveReportMutation.mutate(
+      { report_id: report.id, status, doctor_notes: notes },
+      {
+        onSuccess: () => setApprovalStatus(status),
+        onError: () => setApprovalStatus(status), // Still update locally
+      }
+    );
   };
 
   // ── Loading ────────────────────────────────────────────
@@ -123,6 +109,21 @@ export default function CasePage({
           <p className="text-xs text-gray-400 mt-3">
             Fetching AI analysis and findings
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!report) {
+    return (
+      <div className="min-h-screen pt-16 bg-gray-50 dark:bg-surface-dark flex items-center justify-center">
+        <div className="text-center">
+          <AlertTriangle size={40} className="mx-auto mb-3 text-amber-400" />
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Report not found</h2>
+          <p className="text-sm text-gray-500 mt-1">No data available for report &quot;{reportId}&quot;</p>
+          <Link href="/agent" className="inline-flex items-center gap-1.5 mt-4 text-sm font-medium text-brand-500 hover:text-brand-600">
+            <ArrowLeft size={14} /> Back to Co-Pilot
+          </Link>
         </div>
       </div>
     );
@@ -148,10 +149,10 @@ export default function CasePage({
               <div className="flex items-center gap-2">
                 <User size={14} className="text-brand-500" aria-hidden="true" />
                 <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                  {patient.name}
+                  {patient?.name ?? "Unknown Patient"}
                 </span>
                 <span className="text-xs text-gray-400">
-                  {patient.medical_record_number}
+                  {patient?.medical_record_number ?? ""}
                 </span>
               </div>
             </div>
@@ -165,21 +166,6 @@ export default function CasePage({
                 })}
               </span>
               <ConfidenceBadge confidence={report.confidence} />
-              <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                  dataSource === "api"
-                    ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
-                    : "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
-                }`}
-                title={
-                  dataSource === "api"
-                    ? "Connected to backend API"
-                    : "Using demo data"
-                }
-              >
-                {dataSource === "api" ? <Wifi size={10} /> : <WifiOff size={10} />}
-                {dataSource === "api" ? "Live" : "Demo"}
-              </span>
             </div>
           </div>
         </div>
@@ -226,7 +212,7 @@ export default function CasePage({
         {/* ── Split view: Image + Findings ─────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <ImageViewer
-            imageUrl="/mock/cxr.png"
+            imageUrl={report.explainability.heatmap_url || "/placeholder-scan.svg"}
             heatmapUrl={report.explainability.heatmap_url}
             findings={findings}
           />
@@ -322,7 +308,7 @@ export default function CasePage({
             </div>
             <div className="mt-3 text-right">
               <Link
-                href={`/timeline/${patient.id}`}
+                href={`/timeline/${patient?.id ?? patientIdFromReport}`}
                 className="text-xs text-brand-500 hover:text-brand-600 font-medium inline-flex items-center gap-1"
               >
                 View Full Timeline

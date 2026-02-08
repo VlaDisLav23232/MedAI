@@ -1,6 +1,7 @@
 """Integration tests for patient, timeline, and report endpoints.
 
-Uses FastAPI TestClient (ASGI in-process) — no real server needed.
+Uses FastAPI TestClient (ASGI in-process) with an in-memory SQLite DB.
+Each test class gets a fresh database with tables + seed data.
 """
 
 from __future__ import annotations
@@ -8,18 +9,86 @@ from __future__ import annotations
 import os
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test-dummy")
 os.environ.setdefault("DEBUG", "true")
 
+import json  # noqa: E402
+from datetime import date, datetime  # noqa: E402
+
+from medai.api.auth import get_current_user  # noqa: E402
+from medai.domain.entities import User, UserRole  # noqa: E402
 from medai.main import create_app  # noqa: E402
+from medai.repositories.database import get_db_session  # noqa: E402
+from medai.repositories.models import Base, TimelineEventRow  # noqa: E402
+from medai.repositories.seed import (  # noqa: E402
+    create_seed_patients,
+    create_seed_timeline_events,
+)
+from medai.repositories.sqlalchemy import (  # noqa: E402
+    SqlAlchemyPatientRepository,
+    SqlAlchemyTimelineRepository,
+)
+
+# ── Dummy user returned by the auth override ───────────────
+_TEST_USER = User(
+    id="USR-TEST0001",
+    email="test@medai.com",
+    hashed_password="not-used",
+    name="Test Doctor",
+    role=UserRole.DOCTOR,
+)
+
+
+@pytest_asyncio.fixture
+async def _db_session_factory():
+    """Create a fresh in-memory SQLite engine + tables + seed data."""
+
+    def _json_serializer(obj):
+        """JSON serializer that handles datetime objects (needed for SQLite)."""
+        def default(o):
+            if isinstance(o, (datetime, date)):
+                return o.isoformat()
+            raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+        return json.dumps(obj, default=default)
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        echo=False,
+        json_serializer=_json_serializer,
+    )
+
+    # Create all tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    # Seed demo data
+    async with factory() as session:
+        patient_repo = SqlAlchemyPatientRepository(session)
+        timeline_repo = SqlAlchemyTimelineRepository(session)
+
+        for patient in create_seed_patients():
+            await patient_repo.create(patient)
+
+        for event in create_seed_timeline_events():
+            await timeline_repo.add_event(event)
+
+        await session.commit()
+
+    yield factory
+
+    await engine.dispose()
 
 
 @pytest.fixture
-def app():
-    """Create a fresh app per test class to isolate in-memory state."""
-    # Clear lru_cache singletons so each test class gets fresh repos
+def app(_db_session_factory):
+    """Create a fresh app with test DB and auth overrides."""
     from medai.api import dependencies
     from medai.config import get_settings
 
@@ -27,13 +96,31 @@ def app():
         get_settings,
         dependencies.get_tool_registry,
         dependencies.get_anthropic_client,
-        dependencies.get_patient_repository,
-        dependencies.get_timeline_repository,
-        dependencies.get_report_repository,
     ]:
-        fn.cache_clear()
+        if hasattr(fn, "cache_clear"):
+            fn.cache_clear()
 
-    return create_app()
+    application = create_app()
+
+    # Override DB session to use test in-memory SQLite
+    async def _override_db_session():
+        async with _db_session_factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    application.dependency_overrides[get_db_session] = _override_db_session
+
+    # Bypass JWT auth
+    async def _override_current_user() -> User:
+        return _TEST_USER
+
+    application.dependency_overrides[get_current_user] = _override_current_user
+
+    return application
 
 
 @pytest.fixture
@@ -52,12 +139,12 @@ async def client(app):
 class TestPatientList:
     @pytest.mark.asyncio
     async def test_list_patients_returns_seed_data(self, client):
-        """DEBUG mode should seed 3 demo patients."""
+        """DEBUG mode should seed 4 demo patients."""
         resp = await client.get("/api/v1/patients")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["count"] == 3
-        assert len(data["patients"]) == 3
+        assert data["count"] == 4
+        assert len(data["patients"]) == 4
 
     @pytest.mark.asyncio
     async def test_list_patients_structure(self, client):
