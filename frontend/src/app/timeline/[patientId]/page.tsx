@@ -95,6 +95,8 @@ function normalizeEventType(apiType: string): TimelineEvent["event_type"] {
     "ai_report",
     "procedure",
     "medication",
+    "note",
+    "audio",
   ];
   if (known.includes(apiType as TimelineEvent["event_type"])) {
     return apiType as TimelineEvent["event_type"];
@@ -151,6 +153,7 @@ export default function TimelinePage({
     "lab",
     "encounter",
     "ai_report",
+    "note",
     "medication",
     "procedure",
   ];
@@ -453,12 +456,12 @@ export default function TimelinePage({
                                   </span>
                                 </span>
                               </div>
-                              {event.event_type === "ai_report" && (
+                              {(event.event_type === "ai_report" || (event.event_type === "note" && event.source_type === "approval")) && (
                                 <Link
                                   href={`/case/${event.source_id}`}
                                   className="inline-flex items-center gap-1 text-xs text-brand-500 hover:text-brand-600 font-medium mt-2"
                                 >
-                                  View Full AI Report
+                                  {event.event_type === "ai_report" ? "View Full AI Report" : "View Approved Report"}
                                   <ChevronRight size={12} />
                                 </Link>
                               )}

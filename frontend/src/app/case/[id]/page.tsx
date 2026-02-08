@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ImageViewer } from "@/components/case/ImageViewer";
 import { FindingsPanel } from "@/components/case/FindingsPanel";
 import { ReasoningTrace } from "@/components/case/ReasoningTrace";
-import { ApprovalBar } from "@/components/case/ApprovalBar";
+import { ApprovalBar, type ReportEdits } from "@/components/case/ApprovalBar";
 import { ConfidenceBadge } from "@/components/shared/ConfidenceBadge";
 import { LoadingAnimation } from "@/components/shared/LoadingAnimation";
 import { useReport, useApproveReport, usePatient } from "@/lib/hooks";
@@ -87,16 +87,20 @@ export default function CasePage({
 
   const handleApproval = async (
     status: "approved" | "rejected" | "edited",
-    notes?: string
+    notes?: string,
+    edits?: Record<string, unknown>
   ) => {
     if (!report) return;
     approveReportMutation.mutate(
-      { report_id: report.id, status, doctor_notes: notes },
+      { report_id: report.id, status, doctor_notes: notes, edits },
       {
         onSuccess: () => setApprovalStatus(status),
-        onError: () => setApprovalStatus(status), // Still update locally
       }
     );
+  };
+
+  const handleEditApprove = (edits: ReportEdits, notes?: string) => {
+    handleApproval("edited", notes, edits as Record<string, unknown>);
   };
 
   // ── Loading ────────────────────────────────────────────
@@ -325,7 +329,13 @@ export default function CasePage({
             loading={approveReportMutation.isPending}
             onApprove={(notes) => handleApproval("approved", notes)}
             onReject={(notes) => handleApproval("rejected", notes)}
-            onEdit={(notes) => handleApproval("edited", notes)}
+            onEditApprove={handleEditApprove}
+            currentReport={report ? {
+              diagnosis: report.diagnosis,
+              evidence_summary: report.evidence_summary,
+              plan: report.plan,
+              timeline_impact: report.timeline_impact,
+            } : undefined}
           />
           {approveReportMutation.error && (
             <div className="mt-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-900/10 border border-rose-200 dark:border-rose-800">
