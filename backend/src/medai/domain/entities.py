@@ -411,7 +411,8 @@ class ImageExplainabilityOutput(BaseModel):
     )
     embedding: list[float] | None = Field(
         default=None,
-        description="SigLIP image embedding vector for future similarity search",
+        exclude=True,
+        description="SigLIP image embedding vector — excluded from serialized reports",
     )
     inference: InferenceMetadata | None = Field(
         default=None,

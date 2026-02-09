@@ -818,9 +818,11 @@ class HttpSigLipTool(_HttpToolBase):
     def description(self) -> str:
         return (
             "Generate visual explainability heatmaps for medical images using "
-            "zero-shot classification. Highlights which image regions match "
-            "clinical conditions. Returns per-condition similarity probabilities "
-            "(real sigmoid scores, not LLM-generated) and spatial activation maps."
+            "zero-shot classification. Returns per-condition similarity probabilities "
+            "(real sigmoid scores, not LLM-generated) and spatial activation maps. "
+            "IMPORTANT: You MUST provide case-specific condition_labels tailored to the "
+            "body part and clinical question (e.g. for a hand X-ray: 'phalangeal fracture', "
+            "'joint dislocation', 'soft tissue swelling'). Also set the correct modality_hint."
         )
 
     @property
@@ -845,8 +847,11 @@ class HttpSigLipTool(_HttpToolBase):
                     "type": "array",
                     "items": {"type": "string"},
                     "description": (
-                        "Optional override: custom condition labels to score against. "
-                        "If omitted, uses per-modality defaults from taxonomy."
+                        "REQUIRED: Case-specific condition labels to score against. "
+                        "Provide 5-10 descriptive clinical phrases relevant to the "
+                        "body part and clinical question. Examples for hand X-ray: "
+                        "['phalangeal fracture', 'metacarpal fracture', 'joint dislocation', "
+                        "'normal bone alignment']. Do NOT rely on defaults."
                     ),
                 },
             },
@@ -873,7 +878,7 @@ class HttpSigLipTool(_HttpToolBase):
             "image_url": kwargs.get("image_url", ""),
             "condition_labels": labels,
             "modality_hint": modality_hint,
-            "return_embedding": True,
+            "return_embedding": False,
             "top_k_heatmaps": 5,
         }
 
@@ -917,9 +922,8 @@ class HttpSigLipTool(_HttpToolBase):
             top = max(condition_scores, key=lambda c: c.probability)
             top_heatmap_url = top.heatmap_data_uri
 
-        # Image embedding
-        raw_embedding = data.get("image_embedding")
-        embedding = raw_embedding if isinstance(raw_embedding, list) else None
+        # Image embedding — omitted from reports to save space
+        embedding = None
 
         # Inference metadata
         inference = None
