@@ -48,8 +48,19 @@ async def analyze_case(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 
-    # Persist the report
-    await report_repo.save(report)
+    # Persist the report — wrapped in try/except so the doctor still
+    # gets the analysis result even if persistence fails.
+    try:
+        await report_repo.save(report)
+    except Exception as e:
+        import structlog
+        structlog.get_logger().error(
+            "report_save_failed",
+            report_id=report.id,
+            error=str(e),
+        )
+        # Continue — the report is still returned to the caller and
+        # saved as a JSON artifact below.
 
     # Set up artifact storage for heatmaps
     settings = get_settings()

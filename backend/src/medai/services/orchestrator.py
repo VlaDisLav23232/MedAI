@@ -80,6 +80,18 @@ it generates spatial heatmaps showing which regions triggered each finding. Call
 7. Call text_reasoning ONCE with all available context — do NOT split into multiple calls.
 8. After receiving all tool results, synthesize a BRIEF final diagnosis (under 300 words).
 
+HISTORY INTEGRATION RULES (CRITICAL):
+- When history_search returns prior records, you MUST consider them in your synthesis.
+- Chronic or recurring conditions found in history (e.g. chronic cough, COPD, diabetes,
+  recurring infections) MUST influence the final diagnosis, plan, and confidence.
+- Prior AI reports with doctor-approved diagnoses carry strong evidentiary weight.
+- If history reveals a known chronic condition that explains current symptoms,
+  note that the condition is chronic/recurring rather than treating it as a new finding.
+- If history shows prior treatments or medications, ensure the plan accounts for them
+  (e.g. do not suggest a medication the patient is already on, or note drug interactions).
+- Compare current findings with historical baselines (lab values, imaging) to identify
+  trends (improving, worsening, new onset).
+
 Be thorough but efficient. The doctor is waiting.
 """
 
@@ -462,7 +474,12 @@ class ClaudeOrchestrator(BaseOrchestrator):
         specialist_results: SpecialistResults,
         judgment: Any,
     ) -> FinalReport:
-        """Generate the final structured report from specialist results."""
+        """Generate the final structured report from specialist results.
+
+        History context is merged into the evidence summary and timeline
+        impact so that chronic conditions, prior treatments, and
+        longitudinal trends are visible in the final report.
+        """
         # Aggregate findings from all tools
         all_findings: list[Finding] = []
         reasoning_trace: list[dict[str, Any]] = []
@@ -472,7 +489,14 @@ class ClaudeOrchestrator(BaseOrchestrator):
         for tool_name, output in specialist_results.results.items():
             if tool_name.startswith("_"):
                 continue  # Skip internal entries like _synthesis
-            specialist_outputs[tool_name] = output.model_dump() if hasattr(output, "model_dump") else output
+            # mode="json" ensures datetime/date/enum objects become
+            # JSON-safe strings — prevents StatementError on INSERT
+            # into JSON columns (specialist_outputs, reasoning_trace, etc.)
+            specialist_outputs[tool_name] = (
+                output.model_dump(mode="json")
+                if hasattr(output, "model_dump")
+                else output
+            )
 
             if hasattr(output, "findings"):
                 all_findings.extend(output.findings)
@@ -494,11 +518,21 @@ class ClaudeOrchestrator(BaseOrchestrator):
                 c.relevant_excerpt for c in getattr(text_result, "evidence_citations", [])
             )
 
-        # Get timeline context from history
+        # Get timeline context from history and integrate into evidence
         timeline_impact = "No historical context available"
         history_result = specialist_results.results.get(ToolName.HISTORY_SEARCH.value)
         if history_result and hasattr(history_result, "timeline_context"):
             timeline_impact = history_result.timeline_context
+            # Enrich evidence summary with relevant history
+            if hasattr(history_result, "relevant_records") and history_result.relevant_records:
+                history_evidence = " | ".join(
+                    f"[{r.date.strftime('%Y-%m-%d')}] {r.summary[:100]}"
+                    for r in history_result.relevant_records[:3]
+                )
+                if evidence_summary:
+                    evidence_summary = f"{evidence_summary} | Historical: {history_evidence}"
+                else:
+                    evidence_summary = f"Historical: {history_evidence}"
 
         return FinalReport(
             encounter_id=request.encounter_id or "ENC-ADHOC",

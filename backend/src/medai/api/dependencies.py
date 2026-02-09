@@ -25,7 +25,7 @@ from medai.domain.interfaces import (
     BaseTimelineRepository,
     BaseUserRepository,
 )
-from medai.repositories.database import get_db_session
+from medai.repositories.database import get_db_session, get_session_factory
 from medai.repositories.sqlalchemy import (
     SqlAlchemyPatientRepository,
     SqlAlchemyReportRepository,
@@ -36,7 +36,7 @@ from medai.services.judge import ClaudeJudge, MockJudge
 from medai.services.orchestrator import ClaudeOrchestrator, MockOrchestrator
 from medai.services.tool_registry import ToolRegistry
 from medai.tools.http import register_http_tools
-from medai.tools.local import LocalHistorySearchTool
+from medai.tools.local import DbHistorySearchTool, LocalHistorySearchTool
 from medai.tools.mock import register_mock_tools
 
 
@@ -55,9 +55,11 @@ def get_tool_registry() -> ToolRegistry:
         tools = register_mock_tools()
     else:
         tools = register_http_tools(settings)
-        # History search uses in-memory for now — will be wired to DB later
-        # when the tool is refactored to accept a session-scoped repo.
-        # For now, we skip it in non-debug mode if no timeline repo is available.
+        # Override HttpHistorySearchTool with DbHistorySearchTool so that
+        # patient history is retrieved from the real database (timeline
+        # events + prior AI reports) instead of an external RAG endpoint.
+        session_factory = get_session_factory()
+        tools[ToolName.HISTORY_SEARCH] = DbHistorySearchTool(session_factory)
 
     for tool in tools.values():
         registry.register(tool)

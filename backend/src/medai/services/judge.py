@@ -67,8 +67,14 @@ is consensus or conflict.
 You must evaluate:
 1. CROSS-MODAL CONSISTENCY: Do image findings align with text reasoning (if both present)?
 2. CONFIDENCE LEVELS: Flag any finding with confidence below {confidence_threshold}.
-3. HISTORICAL CONSISTENCY: Do current findings make sense given the patient timeline (if available)?
+3. HISTORICAL CONSISTENCY: Do current findings make sense given the patient timeline (if available)? \
+If history_search returned chronic conditions, prior treatments, or longitudinal trends, \
+verify that the current diagnosis and plan properly account for them. For example, \
+if a patient has a known chronic condition (e.g. COPD, diabetes), the assessment should \
+reference it rather than treating the presentation as entirely new-onset.
 4. GUIDELINE ADHERENCE: Does the suggested plan follow standard clinical guidelines?
+5. HISTORY-INFORMED PLAN: If history shows prior medications or treatments, verify the plan \
+does not duplicate them or miss important drug interactions.
 
 IMPORTANT RULES:
 - You are NOT diagnosing the patient. You are judging whether the specialist \

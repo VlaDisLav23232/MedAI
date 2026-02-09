@@ -6,9 +6,13 @@ import { cn } from "@/lib/utils";
 import { CitationsSidebar } from "@/components/agent/CitationsSidebar";
 import { ChatArea } from "@/components/agent/ChatArea";
 import { ChatInput } from "@/components/agent/ChatInput";
+
+import { PromptTips } from "@/components/agent/PromptTips";
 import { ExamplePrompts } from "@/components/agent/ExamplePrompts";
+
 import { AgentStatusIndicator } from "@/components/shared/AgentStatusIndicator";
 import { PatientSelector } from "@/components/agent/PatientSelector";
+import { useToast } from "@/components/shared/Toast";
 import { apiClient } from "@/lib/api/client";
 import { mapApiResponseToAIReport } from "@/lib/api/mappers";
 import { useChatStore, useUIStore } from "@/lib/store";
@@ -46,6 +50,9 @@ export default function AgentPage() {
   const backendOnline = useUIStore((s) => s.backendOnline);
   const setBackendOnline = useUIStore((s) => s.setBackendOnline);
 
+  // Toast notifications
+  const { error: toastError, success: toastSuccess, warning: toastWarning } = useToast();
+
   // Check backend availability on mount
   useEffect(() => {
     apiClient.isBackendAvailable().then(setBackendOnline);
@@ -76,6 +83,7 @@ export default function AgentPage() {
 
       if (!backendOnline) {
         setAgentStatus("error");
+        toastError("Backend Unavailable", "Please check that the server is running on port 8000.");
         const errMsg: ChatMessage = {
           id: `msg-${Date.now() + 1}`,
           role: "system",
@@ -186,19 +194,22 @@ export default function AgentPage() {
 
         setCitations(agentMsg.citations ?? []);
         addMessage(agentMsg);
+        toastSuccess("Analysis Complete", `Report ${res.report_id} generated with ${Math.round(res.confidence * 100)}% confidence.`);
         setTimeout(() => setAgentStatus("idle"), 2000);
       } catch (err) {
         setAgentStatus("error");
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
+        toastError("Analysis Failed", errorMessage);
         const errMsg: ChatMessage = {
           id: `msg-${Date.now() + 1}`,
           role: "system",
-          content: `Analysis failed: ${err instanceof Error ? err.message : "Unknown error"}. Please try again.`,
+          content: `Analysis failed: ${errorMessage}. Please try again.`,
           timestamp: new Date().toISOString(),
         };
         addMessage(errMsg);
       }
     },
-    [backendOnline, currentPatient, addMessage, setAgentStatus, setCitations]
+    [backendOnline, currentPatient, addMessage, setAgentStatus, setCitations, toastError, toastSuccess]
   );
 
   const handleReset = useCallback(() => {
@@ -297,6 +308,9 @@ export default function AgentPage() {
 
         {/* Chat input */}
         <div className="p-4 bg-white dark:bg-surface-dark-2 border-t border-gray-200 dark:border-gray-800">
+          <div className="flex items-center gap-2 mb-1 justify-end">
+            <PromptTips />
+          </div>
           {/* Show example prompts when no messages yet */}
           {messages.length === 0 && showExamples && currentPatient && (
             <ExamplePrompts
