@@ -125,6 +125,7 @@ async def get_patient_timeline(
             date=e.date,
             event_type=e.event_type.value,
             summary=e.summary,
+            source_id=e.source_id,
             source_type=e.source_type,
             metadata=e.metadata,
         )

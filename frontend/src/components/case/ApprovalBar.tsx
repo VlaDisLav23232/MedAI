@@ -27,6 +27,8 @@ interface ApprovalBarProps {
   onApprove: (notes?: string) => void;
   onReject: (notes?: string) => void;
   onEditApprove: (edits: ReportEdits, notes?: string) => void;
+  /** Called when the user wants to revise a decision (re-open for review). */
+  onRevise?: () => void;
   /** Current report values to pre-fill edit form */
   currentReport?: {
     diagnosis: string;
@@ -43,6 +45,7 @@ export function ApprovalBar({
   onApprove,
   onReject,
   onEditApprove,
+  onRevise,
   currentReport,
   loading = false,
   className,
@@ -291,10 +294,29 @@ export function ApprovalBar({
       )}
 
       {status !== "pending" && !editing && (
-        <div className="px-4 py-3 text-center">
-          <p className="text-xs text-gray-500">
+        <div className="px-4 py-3 space-y-2">
+          <p className="text-xs text-gray-500 text-center">
             Decision recorded. This report is now part of the patient record.
           </p>
+          {notes && (
+            <div className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-surface-dark-3 border border-gray-100 dark:border-gray-800">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block mb-0.5">Doctor Notes</span>
+              <p className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{notes}</p>
+            </div>
+          )}
+          <div className="flex items-center justify-center gap-3 pt-1">
+            <button
+              onClick={() => {
+                setShowNotes(false);
+                setNotes("");
+                onRevise?.();
+              }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-xs font-medium hover:bg-gray-50 dark:hover:bg-surface-dark-3 transition"
+            >
+              <Edit3 size={14} />
+              Revise Decision
+            </button>
+          </div>
         </div>
       )}
     </div>

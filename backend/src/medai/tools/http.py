@@ -272,6 +272,38 @@ def _resolve_local_image_to_base64(image_url: str) -> str | None:
         return None
 
 
+def _resolve_local_audio_to_base64(audio_url: str) -> str | None:
+    """Read a local /storage/ audio file and return as base64 data URI."""
+    if not audio_url or not audio_url.startswith("/storage/"):
+        return None
+    try:
+        settings = get_settings()
+        relative = audio_url.lstrip("/").removeprefix("storage/")
+        local_path = settings.storage_local_path / relative
+        if not local_path.exists():
+            logger.warning("local_audio_not_found", path=str(local_path))
+            return None
+        raw = local_path.read_bytes()
+        # Guess MIME type from extension
+        ext = local_path.suffix.lower()
+        mime_map = {
+            ".ogg": "audio/ogg", ".mp3": "audio/mpeg", ".wav": "audio/wav",
+            ".m4a": "audio/mp4", ".flac": "audio/flac", ".webm": "audio/webm",
+            ".aac": "audio/aac", ".wma": "audio/x-ms-wma",
+        }
+        mime = mime_map.get(ext, "audio/ogg")
+        logger.info(
+            "local_audio_resolved",
+            url=audio_url,
+            size_kb=round(len(raw) / 1024, 1),
+            mime=mime,
+        )
+        return f"data:{mime};base64,{base64.b64encode(raw).decode()}"
+    except Exception as e:
+        logger.warning("local_audio_read_failed", error=str(e))
+        return None
+
+
 class _HttpToolBase(BaseTool):
     """Common HTTP plumbing shared by all remote tools.
 
@@ -638,11 +670,25 @@ class HttpAudioAnalysisTool(_HttpToolBase):
         }
 
     def _build_request_payload(self, **kwargs: Any) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "audio_url": kwargs.get("audio_url", ""),
             "audio_type": kwargs.get("audio_type", "breathing"),
             "clinical_context": kwargs.get("clinical_context", ""),
         }
+        audio_base64 = kwargs.get("audio_base64", "")
+        if audio_base64:
+            payload["audio_base64"] = audio_base64
+        return payload
+
+    async def execute(self, **kwargs: Any) -> ToolOutput:
+        """Override to resolve local audio files to base64."""
+        audio_url = kwargs.get("audio_url", "")
+        if audio_url and audio_url.startswith("/storage/"):
+            b64 = _resolve_local_audio_to_base64(audio_url)
+            if b64:
+                kwargs["audio_base64"] = b64
+                logger.info("local_audio_resolved_to_base64", url=audio_url)
+        return await super().execute(**kwargs)
 
     def _parse_response(self, data: dict[str, Any]) -> AudioAnalysisOutput:
         """Parse HeAR audio analysis response."""

@@ -22,6 +22,31 @@ interface ChatMessageProps {
   onCitationClick?: (citationId: string) => void;
 }
 
+/**
+ * Strip JSON / code-block artifacts from AI-generated markdown content.
+ * Removes ```json blocks, raw JSON objects/arrays, and cleans up leftover markers.
+ */
+function cleanMarkdownContent(text: string): string {
+  // Remove fenced code blocks with json/JSON content
+  let cleaned = text.replace(/```(?:json)?\s*\n?\{[\s\S]*?\}\s*\n?```/gi, "");
+  cleaned = cleaned.replace(/```(?:json)?\s*\n?\[[\s\S]*?\]\s*\n?```/gi, "");
+
+  // Remove standalone raw JSON objects that look like {"key": ...} spanning multiple lines
+  // Only remove if it looks like a data dump (has "reasoning_chain", "evidence", etc.)
+  cleaned = cleaned.replace(
+    /\{[\s\S]*?"(?:reasoning_chain|evidence_citations|plan_suggestions|contraindication_flags|tool_timings)"[\s\S]*?\}/g,
+    ""
+  );
+
+  // Remove leftover empty fenced code blocks
+  cleaned = cleaned.replace(/```\s*```/g, "");
+
+  // Collapse excessive blank lines (more than 2 consecutive)
+  cleaned = cleaned.replace(/\n{4,}/g, "\n\n\n");
+
+  return cleaned.trim();
+}
+
 function ToolResultItem({ result }: { result: ToolResult }) {
   const statusIcon = {
     running: <Loader2 size={12} className="animate-spin text-brand-500" />,
@@ -178,7 +203,7 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
               !isUser && "[&_h3]:text-gray-800 [&_h3]:dark:text-gray-200"
             )}
           >
-            {message.content.split("\n").map((line, i) => {
+            {cleanMarkdownContent(message.content).split("\n").map((line, i) => {
               if (line.startsWith("## ")) {
                 return <h2 key={i}>{renderInline(line.replace("## ", ""), isUser)}</h2>;
               }

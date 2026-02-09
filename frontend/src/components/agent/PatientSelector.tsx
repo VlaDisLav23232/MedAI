@@ -33,12 +33,13 @@ export function PatientSelector({ preselectedId }: PatientSelectorProps) {
     return list.map(mapApiPatient);
   }, [patientsData]);
 
-  // Auto-select from URL or first patient
+  // Auto-select from URL param or when preselectedId changes
   useEffect(() => {
-    if (currentPatient) return;
     if (patients.length === 0) return;
 
     if (preselectedId) {
+      // Force-select if preselectedId differs from current patient
+      if (currentPatient?.id === preselectedId) return;
       const found = patients.find((p) => p.id === preselectedId);
       if (found) {
         setCurrentPatient(found);

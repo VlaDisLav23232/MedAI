@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useCallback, KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
-import { apiClient } from "@/lib/api/client";
 import {
   Send,
   Paperclip,
@@ -22,42 +21,13 @@ interface ChatInputProps {
   onValueChange?: (value: string) => void;
 }
 
-/** Encode a Float32Array as a 16-bit PCM WAV file (ArrayBuffer). */
-function encodeWav(samples: Float32Array, sampleRate: number): ArrayBuffer {
-  const numSamples = samples.length;
-  const buffer = new ArrayBuffer(44 + numSamples * 2);
-  const view = new DataView(buffer);
-
-  // RIFF header
-  writeString(view, 0, "RIFF");
-  view.setUint32(4, 36 + numSamples * 2, true);
-  writeString(view, 8, "WAVE");
-
-  // fmt chunk
-  writeString(view, 12, "fmt ");
-  view.setUint32(16, 16, true);          // chunk size
-  view.setUint16(20, 1, true);           // PCM
-  view.setUint16(22, 1, true);           // mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true); // byte rate
-  view.setUint16(32, 2, true);           // block align
-  view.setUint16(34, 16, true);          // bits per sample
-
-  // data chunk
-  writeString(view, 36, "data");
-  view.setUint32(40, numSamples * 2, true);
-
-  for (let i = 0; i < numSamples; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return buffer;
-}
-
-function writeString(view: DataView, offset: number, str: string) {
-  for (let i = 0; i < str.length; i++) {
-    view.setUint8(offset + i, str.charCodeAt(i));
-  }
+/** Get browser SpeechRecognition constructor (webkit-prefixed or standard). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getSpeechRecognition(): (new () => any) | null {
+  if (typeof window === "undefined") return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const W = window as any;
+  return W.SpeechRecognition || W.webkitSpeechRecognition || null;
 }
 
 export function ChatInput({ onSend, disabled, className, value: externalValue, onValueChange }: ChatInputProps) {
@@ -71,8 +41,6 @@ export function ChatInput({ onSend, disabled, className, value: externalValue, o
   const [isTranscribing, setIsTranscribing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
 
   const handleSend = () => {
     if (!currentText.trim() && files.length === 0) return;
@@ -127,84 +95,79 @@ export function ChatInput({ onSend, disabled, className, value: externalValue, o
     return FileText;
   };
 
-  // ── Voice recording ────────────────────────────────────
+  // ── Voice input via Web Speech API ──────────────────────
 
-  const startRecording = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      chunksRef.current = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        // Stop all tracks to release the mic
-        stream.getTracks().forEach((t) => t.stop());
-
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        if (blob.size === 0) return;
-
-        setIsTranscribing(true);
-        try {
-          // Convert webm → WAV using AudioContext for Whisper compatibility
-          const arrayBuf = await blob.arrayBuffer();
-          const audioCtx = new AudioContext({ sampleRate: 16000 });
-          const decoded = await audioCtx.decodeAudioData(arrayBuf);
-          const pcm = decoded.getChannelData(0); // mono float32
-
-          // Encode as 16-bit WAV
-          const wavBytes = encodeWav(pcm, 16000);
-
-          // Convert to base64 in chunks (spread operator crashes on large arrays)
-          const bytes = new Uint8Array(wavBytes);
-          const chunkSize = 8192;
-          let binary = "";
-          for (let i = 0; i < bytes.length; i += chunkSize) {
-            binary += String.fromCharCode(...Array.from(bytes.subarray(i, i + chunkSize)));
-          }
-          const base64 = btoa(binary);
-
-          const result = await (apiClient as unknown as { transcribe: (b64: string) => Promise<{ error?: string; transcription?: string }> }).transcribe(base64);
-          if (result.error) {
-            console.error("Transcription error:", result.error);
-          } else if (result.transcription) {
-            // Append transcribed text to the input
-            setText((prev) => {
-              const sep = prev.trim() ? " " : "";
-              return prev + sep + result.transcription;
-            });
-            // Auto-resize textarea
-            setTimeout(() => {
-              if (textareaRef.current) {
-                textareaRef.current.style.height = "auto";
-                textareaRef.current.style.height =
-                  Math.min(textareaRef.current.scrollHeight, 160) + "px";
-              }
-            }, 0);
-          }
-          await audioCtx.close();
-        } catch (err) {
-          console.error("Transcription failed:", err);
-          alert("Voice transcription failed. Please try again.");
-        } finally {
-          setIsTranscribing(false);
-        }
-      };
-
-      mediaRecorder.start();
-      mediaRecorderRef.current = mediaRecorder;
-      setIsRecording(true);
-    } catch (err) {
-      console.error("Mic access denied:", err);
+  const startRecording = useCallback(() => {
+    const SRConstructor = getSpeechRecognition();
+    if (!SRConstructor) {
+      alert("Speech recognition is not supported in this browser. Please use Chrome or Edge.");
+      return;
     }
-  }, []);
+
+    const recognition = new SRConstructor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    let finalTranscript = "";
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + " ";
+        } else {
+          interim += transcript;
+        }
+      }
+      // Update text area with final + interim results
+      const updateFn = isControlled ? onValueChange : setText;
+      if (updateFn) {
+        const base = isControlled ? (externalValue ?? "") : "";
+        const prefix = base.trim() ? base.trim() + " " : "";
+        updateFn(prefix + finalTranscript + interim);
+      }
+      // Auto-resize textarea
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto";
+          textareaRef.current.style.height =
+            Math.min(textareaRef.current.scrollHeight, 160) + "px";
+        }
+      }, 0);
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      if (event.error !== "aborted") {
+        alert(`Speech recognition error: ${event.error}. Please try again.`);
+      }
+      setIsRecording(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+      setIsTranscribing(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.start();
+    recognitionRef.current = recognition;
+    setIsRecording(true);
+    setIsTranscribing(false);
+  }, [isControlled, externalValue, onValueChange]);
 
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current = null;
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
     }
     setIsRecording(false);
   }, []);
@@ -336,7 +299,7 @@ export function ChatInput({ onSend, disabled, className, value: externalValue, o
                 : "text-gray-400 hover:text-accent-amber hover:bg-amber-50 dark:hover:bg-amber-900/20"
           )}
           aria-label={isRecording ? "Stop recording" : isTranscribing ? "Transcribing…" : "Start voice input"}
-          title={isRecording ? "Click to stop recording" : isTranscribing ? "Transcribing with Whisper…" : "Voice input"}
+          title={isRecording ? "Click to stop recording" : isTranscribing ? "Transcribing…" : "Voice input (Speech-to-Text)"}
         >
           {isRecording ? <Square size={18} /> : <Mic size={18} />}
         </button>

@@ -209,3 +209,33 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Print / PDF Export ────────────────────────────────── */
+@media print {
+  /* Reset background and colors for print */
+  body { background: white !important; color: black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Hide nav, sidebar, interactive elements, approval bar, pipeline metrics */
+  nav, header.sticky, .print\\:hidden,
+  [aria-label="Back to co-pilot"],
+  button:not([data-print-visible]) { display: none !important; }
+
+  /* Remove shadows, borders, backgrounds */
+  .neo-shadow, .neo-shadow-lg { box-shadow: none !important; }
+
+  /* Ensure page breaks don't split sections */
+  section { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Reset top padding */
+  .min-h-screen.pt-16 { padding-top: 0 !important; min-height: auto !important; }
+
+  /* Print header */
+  .print\\:block { display: block !important; }
+
+  /* Page margins */
+  @page { margin: 1.5cm 2cm; size: A4; }
+
+  /* Make text readable */
+  .text-gray-600, .text-gray-700 { color: #333 !important; }
+  .dark .text-gray-300, .dark .text-gray-400 { color: #333 !important; }
+}

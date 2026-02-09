@@ -650,6 +650,13 @@ class ClaudeOrchestrator(BaseOrchestrator):
             parts.append(f"**Medical Images**: {', '.join(request.image_urls)}")
         if request.audio_urls:
             parts.append(f"**Audio Recordings**: {', '.join(request.audio_urls)}")
+        if request.document_urls:
+            parts.append(f"**Attached Documents**: {', '.join(request.document_urls)}")
+            # Read local document text and include as context
+            for doc_url in request.document_urls[:3]:  # Limit to first 3 docs
+                text = self._read_local_document(doc_url)
+                if text:
+                    parts.append(f"**Document Content ({doc_url.split('/')[-1]})**:\n{text[:4000]}")
         if request.lab_results:
             parts.append(f"**Lab Results**: {json.dumps(request.lab_results, indent=2)}")
 
@@ -658,6 +665,40 @@ class ClaudeOrchestrator(BaseOrchestrator):
             "Call all relevant tools to gather comprehensive findings."
         )
         return "\n".join(parts)
+
+    def _read_local_document(self, doc_url: str) -> str | None:
+        """Read a local /storage/ document (.txt, .pdf) and return text content."""
+        if not doc_url or not doc_url.startswith("/storage/"):
+            return None
+        try:
+            relative = doc_url.lstrip("/").removeprefix("storage/")
+            local_path = self._settings.storage_local_path / relative
+            if not local_path.exists():
+                return None
+            ext = local_path.suffix.lower()
+            if ext == ".txt":
+                return local_path.read_text(encoding="utf-8", errors="replace")
+            elif ext == ".pdf":
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ["pdftotext", str(local_path), "-"],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        return result.stdout
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    pass
+                # Fallback: read raw bytes and extract visible text
+                raw = local_path.read_bytes().decode("utf-8", errors="replace")
+                import re
+                text_chunks = re.findall(r'[\x20-\x7E]{20,}', raw)
+                return "\n".join(text_chunks) if text_chunks else None
+            else:
+                return local_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            logger.warning("document_read_failed", url=doc_url, error=str(e))
+            return None
 
     def _format_tool_descriptions(self) -> str:
         """Format tool descriptions for the system prompt."""

@@ -170,17 +170,34 @@ class HeARAudio:
 
         try:
             audio_url = request.get("audio_url", "")
+            audio_base64 = request.get("audio_base64", "")
             audio_type = request.get("audio_type", "breathing")
             clinical_context = request.get("clinical_context", "")
 
-            # ── Download audio ─────────────────────────────
-            with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-                resp = client.get(audio_url)
-                resp.raise_for_status()
+            # ── Get audio bytes ────────────────────────────
+            if audio_base64:
+                # Decode base64 audio (supports data URI or raw base64)
+                import base64
+                b64_data = audio_base64
+                if ";base64," in b64_data:
+                    b64_data = b64_data.split(";base64,", 1)[1]
+                audio_bytes = base64.b64decode(b64_data)
+            elif audio_url:
+                with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+                    resp = client.get(audio_url)
+                    resp.raise_for_status()
+                audio_bytes = resp.content
+            else:
+                return {
+                    "error": "No audio_url or audio_base64 provided",
+                    "audio_type": audio_type,
+                    "segments": [],
+                    "summary": "Error: No audio input provided.",
+                }
 
             # Load audio with librosa
             audio_data, sr = librosa.load(
-                io.BytesIO(resp.content),
+                io.BytesIO(audio_bytes),
                 sr=self.sample_rate,
                 mono=True,
             )
