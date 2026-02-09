@@ -5,6 +5,7 @@ import { AuthProvider } from "@/providers/AuthProvider";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { Navbar } from "@/components/layout/Navbar";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
+import { ToastProvider } from "@/components/shared/Toast";
 
 export const metadata: Metadata = {
   title: "MedAI Clinical Co-Pilot",
@@ -30,10 +31,12 @@ export default function RootLayout({
         <ThemeProvider>
           <QueryProvider>
             <AuthProvider>
-              <Navbar />
-              <ErrorBoundary label="Application">
-                <div id="main-content">{children}</div>
-              </ErrorBoundary>
+              <ToastProvider>
+                <Navbar />
+                <ErrorBoundary label="Application">
+                  <div id="main-content">{children}</div>
+                </ErrorBoundary>
+              </ToastProvider>
             </AuthProvider>
           </QueryProvider>
         </ThemeProvider>

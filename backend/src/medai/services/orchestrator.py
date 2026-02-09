@@ -489,7 +489,14 @@ class ClaudeOrchestrator(BaseOrchestrator):
         for tool_name, output in specialist_results.results.items():
             if tool_name.startswith("_"):
                 continue  # Skip internal entries like _synthesis
-            specialist_outputs[tool_name] = output.model_dump() if hasattr(output, "model_dump") else output
+            # mode="json" ensures datetime/date/enum objects become
+            # JSON-safe strings — prevents StatementError on INSERT
+            # into JSON columns (specialist_outputs, reasoning_trace, etc.)
+            specialist_outputs[tool_name] = (
+                output.model_dump(mode="json")
+                if hasattr(output, "model_dump")
+                else output
+            )
 
             if hasattr(output, "findings"):
                 all_findings.extend(output.findings)

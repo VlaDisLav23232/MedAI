@@ -8,7 +8,9 @@ All repos accept an AsyncSession injected per-request via FastAPI Depends().
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
+from enum import Enum
 from typing import Any
 
 from sqlalchemy import select, update
@@ -41,6 +43,36 @@ from medai.repositories.models import (
     TimelineEventRow,
     UserRow,
 )
+
+
+# ═══════════════════════════════════════════════════════════════
+#  JSON Safety Helpers
+# ═══════════════════════════════════════════════════════════════
+
+def _json_safe(obj: Any) -> Any:
+    """Recursively convert an object so it is JSON-serialisable.
+
+    Handles datetime, date, Enum, Pydantic models, and nested
+    structures. Acts as a belt-and-suspenders safeguard so that
+    JSON columns never cause StatementError on INSERT/UPDATE.
+    """
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, Enum):
+        return obj.value
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    # Last resort — let json module decide (will raise for truly
+    # unserialisable types, which is the correct behaviour).
+    return obj
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -333,10 +365,10 @@ class SqlAlchemyReportRepository(BaseReportRepository):
             confidence_method=report.confidence_method.value,
             evidence_summary=report.evidence_summary,
             timeline_impact=report.timeline_impact,
-            plan=report.plan,
+            plan=_json_safe(report.plan),
             findings=_serialize_findings(report.findings),
-            reasoning_trace=report.reasoning_trace,
-            specialist_outputs=report.specialist_outputs,
+            reasoning_trace=_json_safe(report.reasoning_trace),
+            specialist_outputs=_json_safe(report.specialist_outputs),
             judge_verdict=_serialize_judgment(report.judge_verdict),
             approval_status=report.approval_status.value,
             created_at=report.created_at,
