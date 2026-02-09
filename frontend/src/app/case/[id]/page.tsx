@@ -28,6 +28,7 @@ import {
   Stethoscope,
   AlertTriangle,
   ChevronRight,
+  ChevronDown,
   Brain,
   Eye,
   Activity,
@@ -318,7 +319,7 @@ export default function CasePage({
               {/* Image Viewer — 3 cols */}
               <div className="lg:col-span-3">
                 <ImageViewer
-                  imageUrl={explainability?.attention_heatmap_url}
+                  imageUrl={report.original_image_url || explainability?.attention_heatmap_url}
                   conditionScores={conditionScores}
                   selectedLabel={selectedConditionLabel}
                   onSelectLabel={setSelectedConditionLabel}
@@ -442,42 +443,26 @@ export default function CasePage({
         </section>
 
         {/* ══ 5. Reasoning Trace ══════════════════════════ */}
-        <section>
-          <div className="flex items-center gap-2 mb-3">
-            <Brain
-              size={16}
-              className="text-brand-500"
-              aria-hidden="true"
-            />
-            <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-              AI Reasoning Trace
-            </h2>
-            <ExplainabilityTooltip
-              content="Step-by-step AI reasoning"
-              detail="Shows each reasoning step the orchestrator took, including which tools were invoked, observations made, and how conclusions were reached. Provides full transparency into the AI decision process."
-            />
-          </div>
+        <CollapsibleSection
+          icon={Brain}
+          title="AI Reasoning Trace"
+          tooltip="Step-by-step AI reasoning"
+          tooltipDetail="Shows each reasoning step the orchestrator took, including which tools were invoked, observations made, and how conclusions were reached. Provides full transparency into the AI decision process."
+        >
           <ReasoningTrace steps={reasoningSteps} />
-        </section>
+        </CollapsibleSection>
 
         {/* ══ 6. Judge Verdict Detail ════════════════════ */}
         {report.judge_verdict && (
-          <section className="p-5 rounded-2xl bg-white dark:bg-surface-dark-2 border border-gray-200 dark:border-gray-800 neo-shadow">
-            <div className="flex items-center gap-2 mb-3">
-              <Shield
-                size={16}
-                className="text-brand-500"
-                aria-hidden="true"
-              />
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                Judge Verdict
-              </h2>
-              <ExplainabilityTooltip
-                content="Automated cross-validation"
-                detail="The Judge module reviews all specialist outputs for consistency. It identifies contradictions, low-confidence items, and missing context to inform clinical decision-making."
-              />
+          <CollapsibleSection
+            icon={Shield}
+            title="Judge Verdict"
+            tooltip="Automated cross-validation"
+            tooltipDetail="The Judge module reviews all specialist outputs for consistency. It identifies contradictions, low-confidence items, and missing context to inform clinical decision-making."
+            defaultOpen={report.judge_verdict.status !== "consensus"}
+            badge={
               <span
-                className={`ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                   report.judge_verdict.status === "consensus"
                     ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400"
                     : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
@@ -485,14 +470,13 @@ export default function CasePage({
               >
                 {report.judge_verdict.status}
               </span>
-            </div>
-
+            }
+          >
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
               {report.judge_verdict.reasoning}
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Contradictions */}
               {report.judge_verdict.contradictions &&
                 report.judge_verdict.contradictions.length > 0 && (
                   <VerdictList
@@ -501,7 +485,6 @@ export default function CasePage({
                     color="rose"
                   />
                 )}
-              {/* Low confidence items */}
               {report.judge_verdict.low_confidence_items &&
                 report.judge_verdict.low_confidence_items.length > 0 && (
                   <VerdictList
@@ -510,7 +493,6 @@ export default function CasePage({
                     color="amber"
                   />
                 )}
-              {/* Missing context */}
               {report.judge_verdict.missing_context &&
                 report.judge_verdict.missing_context.length > 0 && (
                   <VerdictList
@@ -520,36 +502,37 @@ export default function CasePage({
                   />
                 )}
             </div>
-          </section>
+          </CollapsibleSection>
         )}
 
         {/* ══ 7. Pipeline Performance ════════════════════ */}
         {report.pipeline_metrics && (
           <div className="print:hidden">
-            <PipelineMetricsBar metrics={report.pipeline_metrics} />
+            <CollapsibleSection
+              icon={Activity}
+              title="Pipeline Performance"
+              tooltip="Execution timing"
+              tooltipDetail="Breakdown of how long each phase of the analysis pipeline took. Useful for understanding system performance and bottlenecks."
+            >
+              <PipelineMetricsBar metrics={report.pipeline_metrics} />
+            </CollapsibleSection>
           </div>
         )}
 
         {/* ══ 8. Historical Context ══════════════════════ */}
         {historySearch && (
-          <section className="p-5 rounded-2xl bg-white dark:bg-surface-dark-2 border border-gray-200 dark:border-gray-800 neo-shadow">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock
-                size={16}
-                className="text-brand-500"
-                aria-hidden="true"
-              />
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                Historical Context
-              </h2>
-              <ExplainabilityTooltip
-                content="Patient history embeddings search"
-                detail="Semantic search through the patient's medical history using vector embeddings. Finds the most relevant prior records to contextualize the current diagnosis."
-              />
-            </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 italic">
-              &ldquo;{historySearch.timeline_context}&rdquo;
-            </p>
+          <CollapsibleSection
+            icon={Clock}
+            title="Historical Context"
+            tooltip="Patient history embeddings search"
+            tooltipDetail="Semantic search through the patient's medical history using vector embeddings. Finds the most relevant prior records to contextualize the current diagnosis."
+            defaultOpen
+          >
+            {historySearch.timeline_context && (
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 italic">
+                &ldquo;{historySearch.timeline_context}&rdquo;
+              </p>
+            )}
             <div className="space-y-2">
               {historySearch.relevant_records.map((rec, i) => (
                 <div
@@ -585,7 +568,7 @@ export default function CasePage({
                 <ChevronRight size={12} />
               </Link>
             </div>
-          </section>
+          </CollapsibleSection>
         )}
 
         {/* ══ 9. Approval Bar ════════════════════════════ */}
@@ -646,6 +629,51 @@ export default function CasePage({
 /* ══════════════════════════════════════════════════════════════
  *  Sub-components
  * ══════════════════════════════════════════════════════════════ */
+
+/** Collapsible section wrapper with expand/collapse state */
+function CollapsibleSection({
+  icon: Icon,
+  title,
+  tooltip,
+  tooltipDetail,
+  defaultOpen = false,
+  badge,
+  children,
+}: {
+  icon: React.ElementType;
+  title: string;
+  tooltip?: string;
+  tooltipDetail?: string;
+  defaultOpen?: boolean;
+  badge?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <section className="rounded-2xl bg-white dark:bg-surface-dark-2 border border-gray-200 dark:border-gray-800 neo-shadow overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-surface-dark-3 transition-colors"
+        aria-expanded={open}
+      >
+        <Icon size={16} className="text-brand-500 flex-shrink-0" aria-hidden="true" />
+        <h2 className="text-sm font-bold text-gray-900 dark:text-white flex-1">
+          {title}
+        </h2>
+        {tooltip && (
+          <ExplainabilityTooltip content={tooltip} detail={tooltipDetail ?? ""} />
+        )}
+        {badge}
+        <ChevronDown
+          size={16}
+          className={`text-gray-400 transition-transform duration-200 ${open ? "rotate-0" : "-rotate-90"}`}
+        />
+      </button>
+      {open && <div className="px-5 pb-5">{children}</div>}
+    </section>
+  );
+}
 
 /** Top prediction callout card */
 function TopPredictionCard({

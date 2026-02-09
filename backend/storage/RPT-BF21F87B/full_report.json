@@ -1,0 +1,129 @@
+{
+  "id": "RPT-BF21F87B",
+  "encounter_id": "ENC-ADHOC",
+  "patient_id": "PT-009ABE74",
+  "diagnosis": "Patient PT-009ABE74 is undergoing a longitudinal review. The only known significant event is a right upper extremity injury sustained in a high-energy cycling accident on 2026-02-09, for which X-rays were obtained. No new clinical data (labs or imaging) is available for this review. A comprehensive assessment requires review of the full medical history, including the results of the 2026 X-ray and any subsequent investigations or treatments related to the upper extremity injury or other conditions.",
+  "confidence": 0.6,
+  "confidence_method": "model_self_reported",
+  "evidence_summary": "X-rays were ordered for right upper extremity on 2026-02-09 following a high-energy cycling accident (cyclist hit a tree). | Historical: [2026-02-09] Report Approved by Dr. House: High suspicion for fracture of the right hand/wrist/arm (distal radius | [2026-02-09] Report Approved by Dr. House: High suspicion for a significant fracture of the right humerus (likely | [2026-02-09] AI Analysis: High suspicion for a significant fracture of the right humerus (likely shaft, given the",
+  "timeline_impact": "Patient has 4 prior timeline entries. Top matches by TF-IDF similarity to query:\n- [2026-02-09] note: Report Approved by Dr. House: High suspicion for fracture of the right hand/wrist/arm (distal radius, scaphoid, metacarpal, or phalangeal) given the h (relevance: 0.30)\n- [2026-02-09] note: Report Approved by Dr. House: High suspicion for a significant fracture of the right humerus (likely shaft, given the massive upper arm swelling) due  (relevance: 0.30)\n- [2026-02-09] ai_report: AI Analysis: High suspicion for a significant fracture of the right humerus (likely shaft, given the massive upper arm swelling) due to a high-energy  (relevance: 0.30)\n- [2026-02-09] ai_report: AI Analysis: High suspicion for fracture of the right hand/wrist/arm (distal radius, scaphoid, metacarpal, or phalangeal) given the high-energy mechan (relevance: 0.30)\n\n=== 2 PRIOR AI REPORT(S) ===\n[2026-02-09 06:51] Dx: High suspicion for a significant fracture of the right humerus (likely shaft, given the massive upper arm swelling) due to a high-energy mechanism. The fracture is potentially displaced and/or comminuted, warranting surgical consideration. Other associated injuries (e.g., scapula, clavicle, ribs) are possible but less likely to be the primary cause of the described symptoms. Definitive diagnosis and classification require review of the pending X-ray. | Confidence: 85% | Status: approved\n  Plan: Await and review X-ray of the right upper torso/arm.; Consult orthopedic surgery.; Prepare for potential surgical intervention based on X-ray findings.; Pain management.; Neurovascular assessment of the right upper extremity.\n  Doctor notes: Good, heatmap not showing though\n[2026-02-09 04:25] Dx: High suspicion for fracture of the right hand/wrist/arm (distal radius, scaphoid, metacarpal, or phalangeal) given the high-energy mechanism of injury (cyclist hitting a tree). Definitive diagnosis and fracture classification require interpretation of the pending X-ray results. | Confidence: 20% | Status: approved\n  Plan: Await and review the results of the right hand/arm X-ray.; Interpret the X-ray to confirm the presence of a fracture.; If a fracture is present, classify it according to standard orthopedic nomenclature (e.g., distal radius fracture type - Colles/Smith, scaphoid fracture location, metacarpal fracture location/displacement, phalangeal fracture location/displacement).; Based on the fracture type and severity, determine appropriate management (e.g., immobilization, reduction, surgical consultation).",
+  "plan": [
+    "Obtain and review the results of the right upper extremity X-rays from 2026-02-09.",
+    "Review the patient's complete medical history, including all previous laboratory results and imaging studies.",
+    "If clinically indicated based on the review, consider ordering new investigations or consultations."
+  ],
+  "findings": [],
+  "reasoning_trace": [
+    {
+      "step": 1,
+      "thought": "The request is for a longitudinal review of a patient (PT-009ABE74) with no new labs or imaging provided in this specific encounter. The only relevant historical information is a right upper extremity X-ray from 2026-02-09 following a high-energy cycling accident. The clinical question is broad: 'review of patient labs and imaging history'. Since no new data is available, the assessment must be based on the limited historical context and the nature of the request itself. The primary focus should be on the known injury (right upper extremity trauma) and the lack of current acute issues suggested by the request format (longitudinal review, no new data). The assessment will reflect the need to review the *full* history, including the results of the 2026 X-ray and any subsequent labs/imaging, to provide a comprehensive evaluation. The confidence is moderate due to the lack of current data. Plan suggestions will focus on obtaining the missing historical data. Contraindications are not applicable given the limited information."
+    }
+  ],
+  "specialist_outputs": {
+    "history_search": {
+      "tool": "history_search",
+      "patient_id": "PT-009ABE74",
+      "relevant_records": [
+        {
+          "date": "2026-02-09T07:02:16.331517",
+          "record_type": "note",
+          "summary": "Report Approved by Dr. House: High suspicion for fracture of the right hand/wrist/arm (distal radius, scaphoid, metacarpal, or phalangeal) given the high-energy mechanism of injury (cyclist hitting a tree). Definitive diagnosis and fracture classification require interpretation of the pending X-ray results.",
+          "similarity_score": 0.3,
+          "clinical_relevance": "Prior note from 2026-02-09: Report Approved by Dr. House: High suspicion for fracture of the right hand/wrist/arm (distal radius, scaphoid, metacarp"
+        },
+        {
+          "date": "2026-02-09T06:59:51.571534",
+          "record_type": "note",
+          "summary": "Report Approved by Dr. House: High suspicion for a significant fracture of the right humerus (likely shaft, given the massive upper arm swelling) due to a high-energy mechanism. The fracture is potentially displaced and/or comminuted, warranting surgical consideration. Other associated injuries (e.g., scapula, clavicle, ribs) are possible but less likely to be the primary cause of the described symptoms. Definitive diagnosis and classification require review of the pending X-ray.",
+          "similarity_score": 0.3,
+          "clinical_relevance": "Prior note from 2026-02-09: Report Approved by Dr. House: High suspicion for a significant fracture of the right humerus (likely shaft, given the ma"
+        },
+        {
+          "date": "2026-02-09T06:51:49.838608",
+          "record_type": "ai_report",
+          "summary": "AI Analysis: High suspicion for a significant fracture of the right humerus (likely shaft, given the massive upper arm swelling) due to a high-energy mechanism. The fracture is potentially displaced and/or comminuted, warranting surgical consideration. Other associated injuries (e.g., scapula, clavicle, ribs) are possible but less likely to be the primary cause of the described symptoms. Definitive diagnosis and classification require review of the pending X-ray. (85% confidence)",
+          "similarity_score": 0.3,
+          "clinical_relevance": "Prior ai_report from 2026-02-09: AI Analysis: High suspicion for a significant fracture of the right humerus (likely shaft, given the massive upper arm s"
+        },
+        {
+          "date": "2026-02-09T04:25:25.602595",
+          "record_type": "ai_report",
+          "summary": "AI Analysis: High suspicion for fracture of the right hand/wrist/arm (distal radius, scaphoid, metacarpal, or phalangeal) given the high-energy mechanism of injury (cyclist hitting a tree). Definitive diagnosis and fracture classification require interpretation of the pending X-ray results. (20% confidence)",
+          "similarity_score": 0.3,
+          "clinical_relevance": "Prior ai_report from 2026-02-09: AI Analysis: High suspicion for fracture of the right hand/wrist/arm (distal radius, scaphoid, metacarpal, or phalangeal"
+        }
+      ],
+      "timeline_context": "Patient has 4 prior timeline entries. Top matches by TF-IDF similarity to query:\n- [2026-02-09] note: Report Approved by Dr. House: High suspicion for fracture of the right hand/wrist/arm (distal radius, scaphoid, metacarpal, or phalangeal) given the h (relevance: 0.30)\n- [2026-02-09] note: Report Approved by Dr. House: High suspicion for a significant fracture of the right humerus (likely shaft, given the massive upper arm swelling) due  (relevance: 0.30)\n- [2026-02-09] ai_report: AI Analysis: High suspicion for a significant fracture of the right humerus (likely shaft, given the massive upper arm swelling) due to a high-energy  (relevance: 0.30)\n- [2026-02-09] ai_report: AI Analysis: High suspicion for fracture of the right hand/wrist/arm (distal radius, scaphoid, metacarpal, or phalangeal) given the high-energy mechan (relevance: 0.30)\n\n=== 2 PRIOR AI REPORT(S) ===\n[2026-02-09 06:51] Dx: High suspicion for a significant fracture of the right humerus (likely shaft, given the massive upper arm swelling) due to a high-energy mechanism. The fracture is potentially displaced and/or comminuted, warranting surgical consideration. Other associated injuries (e.g., scapula, clavicle, ribs) are possible but less likely to be the primary cause of the described symptoms. Definitive diagnosis and classification require review of the pending X-ray. | Confidence: 85% | Status: approved\n  Plan: Await and review X-ray of the right upper torso/arm.; Consult orthopedic surgery.; Prepare for potential surgical intervention based on X-ray findings.; Pain management.; Neurovascular assessment of the right upper extremity.\n  Doctor notes: Good, heatmap not showing though\n[2026-02-09 04:25] Dx: High suspicion for fracture of the right hand/wrist/arm (distal radius, scaphoid, metacarpal, or phalangeal) given the high-energy mechanism of injury (cyclist hitting a tree). Definitive diagnosis and fracture classification require interpretation of the pending X-ray results. | Confidence: 20% | Status: approved\n  Plan: Await and review the results of the right hand/arm X-ray.; Interpret the X-ray to confirm the presence of a fracture.; If a fracture is present, classify it according to standard orthopedic nomenclature (e.g., distal radius fracture type - Colles/Smith, scaphoid fracture location, metacarpal fracture location/displacement, phalangeal fracture location/displacement).; Based on the fracture type and severity, determine appropriate management (e.g., immobilization, reduction, surgical consultation)."
+    },
+    "text_reasoning": {
+      "tool": "text_reasoning",
+      "reasoning_chain": [
+        {
+          "step": 1,
+          "thought": "The request is for a longitudinal review of a patient (PT-009ABE74) with no new labs or imaging provided in this specific encounter. The only relevant historical information is a right upper extremity X-ray from 2026-02-09 following a high-energy cycling accident. The clinical question is broad: 'review of patient labs and imaging history'. Since no new data is available, the assessment must be based on the limited historical context and the nature of the request itself. The primary focus should be on the known injury (right upper extremity trauma) and the lack of current acute issues suggested by the request format (longitudinal review, no new data). The assessment will reflect the need to review the *full* history, including the results of the 2026 X-ray and any subsequent labs/imaging, to provide a comprehensive evaluation. The confidence is moderate due to the lack of current data. Plan suggestions will focus on obtaining the missing historical data. Contraindications are not applicable given the limited information."
+        }
+      ],
+      "assessment": "Patient PT-009ABE74 is undergoing a longitudinal review. The only known significant event is a right upper extremity injury sustained in a high-energy cycling accident on 2026-02-09, for which X-rays were obtained. No new clinical data (labs or imaging) is available for this review. A comprehensive assessment requires review of the full medical history, including the results of the 2026 X-ray and any subsequent investigations or treatments related to the upper extremity injury or other conditions.",
+      "confidence": 0.6,
+      "evidence_citations": [
+        {
+          "source": "Imaging Findings",
+          "source_type": "Clinical Note",
+          "relevant_excerpt": "X-rays were ordered for right upper extremity on 2026-02-09 following a high-energy cycling accident (cyclist hit a tree).",
+          "date": "2026-02-09T00:00:00"
+        }
+      ],
+      "plan_suggestions": [
+        "Obtain and review the results of the right upper extremity X-rays from 2026-02-09.",
+        "Review the patient's complete medical history, including all previous laboratory results and imaging studies.",
+        "If clinically indicated based on the review, consider ordering new investigations or consultations."
+      ],
+      "contraindication_flags": [],
+      "inference": {
+        "model_id": "google/medgemma-27b-text-it",
+        "temperature": 0.0,
+        "token_count": 519,
+        "inference_time_ms": 38896.5,
+        "sequence_fluency_score": 0.8347
+      }
+    }
+  },
+  "judge_verdict": {
+    "verdict": "consensus",
+    "confidence": 0.85,
+    "reasoning": "Only two tools produced results: history_search and text_reasoning. Both are consistent in their findings. The history_search retrieved 4 records all from 2026-02-09 documenting a high-energy cycling accident with right upper extremity trauma, two AI reports (one focused on hand/wrist at 20% confidence, one on humerus shaft fracture at 85% confidence), both approved by Dr. House. The text_reasoning tool correctly synthesized this history, noted the absence of new labs or imaging data, and recommended obtaining/reviewing the X-ray results and complete medical history. There is no clinical disagreement between the tools \u2014 both identify the same injury event, the same prior reports, and the same gaps in data. The synthesis is also fully aligned. The text_reasoning confidence of 0.60 is at the threshold but is appropriate given the broad nature of the query ('review labs and imaging history') and the limited data available. No contradictions exist between the tool outputs.",
+    "contradictions": [],
+    "low_confidence_items": [
+      "text_reasoning confidence is 0.60 \u2014 at threshold, reflecting limited available data for a broad longitudinal review request",
+      "Prior AI report from 2026-02-09 04:25 had only 20% confidence for hand/wrist/arm fracture"
+    ],
+    "missing_context": [
+      "No imaging tool (image_analysis) was run \u2014 actual X-ray images were not provided for this review",
+      "No formal radiology read of the right upper extremity X-rays is documented in the system",
+      "No lab results are on file for this patient",
+      "No follow-up encounters or orthopedic consult outcomes are documented after the 2026-02-09 visit",
+      "Neurovascular exam findings not recorded"
+    ],
+    "requery_tools": []
+  },
+  "approval_status": "pending",
+  "created_at": "2026-02-09T07:09:08.657376",
+  "doctor_notes": null,
+  "pipeline_metrics": {
+    "tools_s": 115.3,
+    "judge_s": 10.3,
+    "report_s": 0.0,
+    "total_s": 125.7,
+    "tool_timings": {
+      "history_search": 0.01,
+      "text_reasoning": 80.7
+    },
+    "requery_cycles": 0,
+    "tools_called": [
+      "history_search",
+      "text_reasoning",
+      "_synthesis"
+    ],
+    "tools_failed": []
+  }
+}

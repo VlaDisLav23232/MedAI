@@ -925,7 +925,7 @@ class HttpSigLipTool(_HttpToolBase):
             "condition_labels": labels,
             "modality_hint": modality_hint,
             "return_embedding": False,
-            "top_k_heatmaps": 5,
+            "top_k_heatmaps": 3,
         }
 
         # Forward base64 image if provided (avoids remote fetch failures)

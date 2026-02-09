@@ -63,6 +63,10 @@ class CaseAnalysisResponse(BaseModel):
     created_at: datetime
     # Explainability artifacts
     heatmap_urls: list[str] = Field(default_factory=list)
+    image_urls: list[str] = Field(
+        default_factory=list,
+        description="Original uploaded medical image URLs (for overlay in viewer)",
+    )
     specialist_summaries: dict[str, str] = Field(default_factory=dict)
     specialist_outputs: dict[str, Any] = Field(
         default_factory=dict,

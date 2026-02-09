@@ -476,3 +476,7 @@ class FinalReport(BaseModel):
         default=None,
         description="Timing and performance breakdown for the full pipeline",
     )
+    image_urls: list[str] = Field(
+        default_factory=list,
+        description="Original uploaded medical image URLs",
+    )

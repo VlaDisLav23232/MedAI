@@ -27,22 +27,28 @@ interface ChatMessageProps {
  * Removes ```json blocks, raw JSON objects/arrays, and cleans up leftover markers.
  */
 function cleanMarkdownContent(text: string): string {
-  // Remove fenced code blocks with json/JSON content
-  let cleaned = text.replace(/```(?:json)?\s*\n?\{[\s\S]*?\}\s*\n?```/gi, "");
-  cleaned = cleaned.replace(/```(?:json)?\s*\n?\[[\s\S]*?\]\s*\n?```/gi, "");
+  let cleaned = text;
 
-  // Remove standalone raw JSON objects that look like {"key": ...} spanning multiple lines
-  // Only remove if it looks like a data dump (has "reasoning_chain", "evidence", etc.)
+  // Remove fenced code blocks with optional language tag
+  cleaned = cleaned.replace(/```[\w]*\s*\n?[\s\S]*?```/g, "");
+
+  // Remove standalone raw JSON objects that look like AI data dumps
   cleaned = cleaned.replace(
-    /\{[\s\S]*?"(?:reasoning_chain|evidence_citations|plan_suggestions|contraindication_flags|tool_timings)"[\s\S]*?\}/g,
+    /\{[\s\S]*?"(?:reasoning_chain|evidence_citations|plan_suggestions|contraindication_flags|tool_timings|diagnosis|confidence|assessment|findings|timeline_context|specialist_outputs)"[\s\S]*?\}/g,
+    ""
+  );
+
+  // Remove JSON arrays that look like reasoning chains
+  cleaned = cleaned.replace(
+    /\[[\s\S]*?\{[\s\S]*?"(?:step|thought|action|observation)"[\s\S]*?\}[\s\S]*?\]/g,
     ""
   );
 
   // Remove leftover empty fenced code blocks
   cleaned = cleaned.replace(/```\s*```/g, "");
 
-  // Collapse excessive blank lines (more than 2 consecutive)
-  cleaned = cleaned.replace(/\n{4,}/g, "\n\n\n");
+  // Collapse excessive blank lines
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
 
   return cleaned.trim();
 }
