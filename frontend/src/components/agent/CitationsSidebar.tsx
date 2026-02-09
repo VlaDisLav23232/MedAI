@@ -177,11 +177,13 @@ export function CitationsSidebar({
                         )}
                       />
                     </div>
-                    {citation.date && (
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                    {(citation as any).date ? (
                       <span className="text-[10px] text-gray-400 dark:text-gray-500">
-                        {citation.date}
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {String((citation as any).date)}
                       </span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
 

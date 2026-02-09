@@ -39,7 +39,7 @@ export function FindingsPanel({
                   {finding.finding}
                 </h4>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <SeverityBadge severity={finding.severity} />
+                  <SeverityBadge severity={finding.severity as "low" | "moderate" | "high" | "critical" | "normal" | "warning"} />
                   <ConfidenceBadge confidence={finding.confidence} size="sm" />
                 </div>
               </div>
