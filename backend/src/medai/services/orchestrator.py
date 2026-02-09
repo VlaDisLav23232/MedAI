@@ -632,6 +632,7 @@ class ClaudeOrchestrator(BaseOrchestrator):
             specialist_outputs=specialist_outputs,
             judge_verdict=judgment,
             created_at=datetime.utcnow(),
+            image_urls=request.image_urls,
         )
 
     def _build_user_message(self, request: CaseAnalysisRequest) -> str:
@@ -917,6 +918,7 @@ class MockOrchestrator(BaseOrchestrator):
             reasoning_trace=reasoning_trace,
             specialist_outputs={k: v.model_dump() for k, v in results.results.items()},
             judge_verdict=judgment,
+            image_urls=request.image_urls,
         )
 
     async def dispatch_tools(

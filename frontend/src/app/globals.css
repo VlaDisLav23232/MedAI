@@ -212,30 +212,37 @@
 
 /* ── Print / PDF Export ────────────────────────────────── */
 @media print {
-  /* Reset background and colors for print */
-  body { background: white !important; color: black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* White background, black text, preserve colors for charts */
+  body { background: white !important; color: #111 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  /* Hide nav, sidebar, interactive elements, approval bar, pipeline metrics */
-  nav, header.sticky, .print\\:hidden,
-  [aria-label="Back to co-pilot"],
-  button:not([data-print-visible]) { display: none !important; }
+  /* Hide only the top nav bar and approval/action buttons */
+  nav, header.sticky, .print\:hidden { display: none !important; }
 
-  /* Remove shadows, borders, backgrounds */
+  /* Show print header */
+  .print\:block { display: block !important; }
+
+  /* Remove shadows for clean look */
   .neo-shadow, .neo-shadow-lg { box-shadow: none !important; }
 
-  /* Ensure page breaks don't split sections */
-  section { break-inside: avoid; page-break-inside: avoid; }
-
-  /* Reset top padding */
+  /* Remove top padding from main layout */
   .min-h-screen.pt-16 { padding-top: 0 !important; min-height: auto !important; }
 
-  /* Print header */
-  .print\\:block { display: block !important; }
+  /* All collapsible sections must be open in print — show children */
+  section, details { break-inside: avoid; page-break-inside: avoid; }
 
-  /* Page margins */
+  /* Force all dark-mode text to dark for legibility */
+  [class*="dark:text-gray"], [class*="dark:text-white"] { color: #111 !important; }
+  .text-gray-400, .text-gray-500, .text-gray-600 { color: #444 !important; }
+
+  /* Ensure images print */
+  img { max-width: 100% !important; break-inside: avoid; }
+
+  /* Page setup */
   @page { margin: 1.5cm 2cm; size: A4; }
 
-  /* Make text readable */
-  .text-gray-600, .text-gray-700 { color: #333 !important; }
-  .dark .text-gray-300, .dark .text-gray-400 { color: #333 !important; }
+  /* Ensure all content inside collapsible sections is visible */
+  [aria-expanded] + div { display: block !important; }
+
+  /* Make disclaimer visible */
+  aside[role="note"] { break-inside: avoid; border: 1px solid #e5e7eb !important; }
 }

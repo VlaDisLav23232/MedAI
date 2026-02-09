@@ -1,0 +1,20 @@
+%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+4 0 obj << /Length 1199 >> stream
+BT /F1 12 Tf 1 0 0 1 72 750 Tm (Radiology Report - Chest X-Ray) Tj 1 0 0 1 72 734 Tm () Tj 1 0 0 1 72 718 Tm (Patient: Demo Patient \(ID: PAT-DEMO-001\)) Tj 1 0 0 1 72 702 Tm (Date: 2025-02-08) Tj 1 0 0 1 72 686 Tm (Exam: PA and lateral chest radiograph) Tj 1 0 0 1 72 670 Tm () Tj 1 0 0 1 72 654 Tm (FINDINGS:) Tj 1 0 0 1 72 638 Tm (Heart: Normal size. No pericardial effusion.) Tj 1 0 0 1 72 622 Tm (Lungs: Bilateral patchy opacities in lower lobes, consistent with pneumonia or atelectasis. Small left pleural effusion noted.) Tj 1 0 0 1 72 606 Tm (Mediastinum: No widening. Trachea midline.) Tj 1 0 0 1 72 590 Tm (Osseous structures: No acute fractures.) Tj 1 0 0 1 72 574 Tm () Tj 1 0 0 1 72 558 Tm (IMPRESSION:) Tj 1 0 0 1 72 542 Tm (1. Bilateral lower lobe opacities - likely pneumonia.) Tj 1 0 0 1 72 526 Tm (2. Small left pleural effusion.) Tj 1 0 0 1 72 510 Tm (3. Otherwise normal cardiomediastinal silhouette.) Tj 1 0 0 1 72 494 Tm () Tj 1 0 0 1 72 478 Tm (RECOMMENDATION:) Tj 1 0 0 1 72 462 Tm (Clinical correlation advised. Consider CT chest if symptoms persist after antibiotic therapy.) Tj 1 0 0 1 72 446 Tm () Tj 1 0 0 1 72 430 Tm (Reported by: Dr. A. Smith, MD \(Radiology\)) Tj ET
+endstream endobj
+5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001492 00000 n 
+trailer << /Size 6 /Root 1 0 R >>
+startxref
+1562
+%%EOF

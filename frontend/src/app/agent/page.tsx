@@ -22,8 +22,6 @@ import type { ChatMessage, ToolResult } from "@/lib/types";
 import {
   PanelLeftOpen,
   PanelLeftClose,
-  Activity,
-  Settings,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -52,7 +50,7 @@ export default function AgentPage() {
   const setBackendOnline = useUIStore((s) => s.setBackendOnline);
 
   // Toast notifications
-  const { error: toastError, success: toastSuccess, warning: toastWarning } = useToast();
+  const { error: toastError, success: toastSuccess } = useToast();
 
   // Check backend availability on mount
   useEffect(() => {
@@ -363,14 +361,6 @@ export default function AgentPage() {
     [backendOnline, currentPatient, addMessage, setMessages, setAgentStatus, setCitations, toastError, toastSuccess]
   );
 
-  const handleReset = useCallback(() => {
-    setMessages([]);
-    setCitations([]);
-    setAgentStatus("idle");
-    setInputValue("");
-    setShowExamples(true);
-  }, [setMessages, setCitations, setAgentStatus]);
-
   const handleSelectExample = useCallback((prompt: string) => {
     setInputValue(prompt);
     setShowExamples(false);
@@ -430,25 +420,6 @@ export default function AgentPage() {
               {backendOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
               {backendOnline ? "Live" : "Offline"}
             </div>
-
-            <div className="h-5 w-px bg-gray-200 dark:bg-gray-700" />
-
-            <button
-              onClick={handleReset}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20 hover:bg-brand-100 dark:hover:bg-brand-900/30 transition"
-            >
-              <Activity size={12} />
-              New Chat
-            </button>
-
-            <button
-              onClick={() => toastWarning("Coming Soon", "Settings panel is under development.")}
-              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-surface-dark-3 transition text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              aria-label="Settings (coming soon)"
-              title="Settings — coming soon"
-            >
-              <Settings size={16} />
-            </button>
           </div>
         </div>
 
