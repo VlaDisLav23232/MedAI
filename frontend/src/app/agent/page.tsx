@@ -111,16 +111,21 @@ export default function AgentPage() {
           ...(audioUrls.length > 0 && { audio_urls: audioUrls }),
           ...(documentUrls.length > 0 && { document_urls: documentUrls }),
         });
+
+        if (res.error || !res.data) {
+          throw new Error(res.error || "Analysis returned no data");
+        }
+        const data = res.data;
         setAgentStatus("complete");
 
         // Map the response to a structured AI report
-        const mappedReport = mapApiResponseToAIReport(res);
+        const mappedReport = mapApiResponseToAIReport(data);
 
         // Build rich citations from findings + specialist summaries
         const allCitations: import("@/lib/types").Citation[] = [];
 
         // Findings → "finding" type citations
-        res.findings.forEach((f, i) => {
+        data.findings.forEach((f, i) => {
           allCitations.push({
             id: `cit-finding-${i}`,
             type: "finding",
@@ -132,8 +137,8 @@ export default function AgentPage() {
         });
 
         // Specialist summaries → typed citations for sidebar tabs
-        if (res.specialist_summaries) {
-          Object.entries(res.specialist_summaries).forEach(([tool, summary], i) => {
+        if (data.specialist_summaries) {
+          Object.entries(data.specialist_summaries).forEach(([tool, summary], i) => {
             if (tool.includes("image") || tool === "image_analysis") {
               allCitations.push({
                 id: `cit-imaging-${i}`,
@@ -173,7 +178,7 @@ export default function AgentPage() {
         const agentMsg: ChatMessage = {
           id: `msg-${Date.now() + 1}`,
           role: "agent",
-          content: `**Diagnosis:** ${res.diagnosis} (${Math.round(res.confidence * 100)}% confidence)\n\n${res.evidence_summary}\n\n**Plan:**\n${res.plan.map((p) => `- ${p}`).join("\n")}\n\n[View Full Report →](/case/${res.report_id})`,
+          content: `**Diagnosis:** ${data.diagnosis} (${Math.round(data.confidence * 100)}% confidence)\n\n${data.evidence_summary}\n\n**Plan:**\n${data.plan.map((p) => `- ${p}`).join("\n")}\n\n[View Full Report →](/case/${data.report_id})`,
           timestamp: new Date().toISOString(),
           report: mappedReport,
           citations: allCitations,

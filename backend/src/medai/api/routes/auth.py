@@ -130,3 +130,9 @@ async def get_me(
 ) -> UserResponse:
     """Return the currently authenticated user's profile."""
     return _user_response(current_user)
+
+
+@router.post("/logout", status_code=200)
+async def logout() -> dict[str, str]:
+    """Logout endpoint (JWT is stateless — client clears the token)."""
+    return {"detail": "Logged out"}

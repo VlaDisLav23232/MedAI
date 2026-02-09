@@ -50,12 +50,20 @@ class Settings(BaseSettings):
         description="Claude model to use for orchestration",
     )
     orchestrator_max_tokens: int = Field(
-        default=16384,
-        description="Max output tokens per orchestrator call",
+        default=8192,
+        description=(
+            "Max output tokens per orchestrator Claude call. "
+            "Covers tool-use JSON (~500 tok/tool × 5 tools = 2500) + final synthesis (~700). "
+            "8192 gives ~2× headroom. You only pay for tokens actually generated."
+        ),
     )
     judge_max_tokens: int = Field(
-        default=2048,
-        description="Max output tokens per judge call",
+        default=4096,
+        description=(
+            "Max output tokens per judge Claude call. "
+            "Structured verdict is ~300-500 tokens. "
+            "4096 gives ample headroom for verbose reasoning."
+        ),
     )
 
     # ── Tool Endpoints (Modal / self-hosted) ───────────────
@@ -103,7 +111,7 @@ class Settings(BaseSettings):
     )
     allowed_origins: list[str] = Field(
         default=["http://localhost:3000"],
-        description="CORS allowed origins (comma-separated in env)",
+        description="CORS allowed origins (JSON array format in .env)",
     )
 
     # ── Storage ────────────────────────────────────────────

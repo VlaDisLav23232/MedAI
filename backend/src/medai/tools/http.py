@@ -14,12 +14,16 @@ Each tool includes:
 
 from __future__ import annotations
 
+import base64
+import io
+import mimetypes
 import structlog
+from pathlib import Path
 from typing import Any
 
 import httpx
 
-from medai.config import Settings
+from medai.config import Settings, get_settings
 from medai.domain.entities import (
     AudioAnalysisOutput,
     AudioSegment,
@@ -109,6 +113,77 @@ DEFAULT_TIMEOUT = 300.0  # seconds (Modal cold starts can take 2-5 min)
 MAX_RETRIES = 2
 RETRY_BACKOFF = 2.0  # base seconds for exponential backoff
 
+# ── Image pre-processing for inference ─────────────────────
+# Models resize internally (SigLIP → 384², MedGemma → 448²).
+# Sending a 4000×4000 DICOM as raw base64 wastes bandwidth and
+# memory.  We downscale to MAX_INFERENCE_EDGE before encoding.
+# Quality 85 JPEG is visually lossless for AI inference.
+
+MAX_INFERENCE_EDGE = 512   # px — covers all current model input sizes
+JPEG_QUALITY = 85          # good balance: ~10× smaller than PNG, minimal loss
+
+
+def _resize_for_inference(raw_bytes: bytes, *, max_edge: int = MAX_INFERENCE_EDGE) -> tuple[bytes, str]:
+    """Resize an image so its longest edge ≤ max_edge.
+
+    Returns (jpeg_bytes, mime_type).  Falls back to original bytes
+    if Pillow can't decode the image.
+    """
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(raw_bytes))
+
+        # Convert palette / RGBA → RGB for JPEG encoding
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+
+        # Only downscale, never upscale
+        if max(img.size) > max_edge:
+            img.thumbnail((max_edge, max_edge), Image.LANCZOS)
+            logger.debug("image_resized_for_inference", original=img.size, target=max_edge)
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+        return buf.getvalue(), "image/jpeg"
+    except Exception as e:
+        logger.warning("image_resize_failed_using_original", error=str(e))
+        mime = mimetypes.guess_type("img.jpg")[0] or "image/jpeg"
+        return raw_bytes, mime
+
+
+def _resolve_local_image_to_base64(image_url: str) -> str | None:
+    """If image_url is a relative /storage/... path, read from disk,
+    resize for inference, and return a data-URI base64 string.
+
+    Returns None if the URL is external or the file doesn't exist.
+
+    Production note: replace this with a signed S3/GCS URL approach —
+    Modal fetches the image directly, no base64 in the payload at all.
+    """
+    if not image_url or not image_url.startswith("/storage/"):
+        return None
+    try:
+        settings = get_settings()
+        # /storage/uploads/xxx.jpg → ./storage/uploads/xxx.jpg
+        relative = image_url.lstrip("/").removeprefix("storage/")
+        local_path = settings.storage_local_path / relative
+        if not local_path.exists():
+            logger.warning("local_image_not_found", path=str(local_path))
+            return None
+        raw = local_path.read_bytes()
+        resized, mime = _resize_for_inference(raw)
+        logger.info(
+            "local_image_resolved",
+            url=image_url,
+            original_kb=round(len(raw) / 1024, 1),
+            resized_kb=round(len(resized) / 1024, 1),
+        )
+        return f"data:{mime};base64,{base64.b64encode(resized).decode()}"
+    except Exception as e:
+        logger.warning("local_image_read_failed", error=str(e))
+        return None
+
 
 class _HttpToolBase(BaseTool):
     """Common HTTP plumbing shared by all remote tools.
@@ -151,7 +226,19 @@ class _HttpToolBase(BaseTool):
     # ── Core HTTP execution with retry ─────────────────────
 
     async def execute(self, **kwargs: Any) -> ToolOutput:
-        """Call the remote endpoint with retry + structured parsing."""
+        """Call the remote endpoint with retry + structured parsing.
+
+        Automatically resolves local /storage/... image paths to base64
+        so Modal endpoints can access them.
+        """
+        # Resolve local storage paths → base64 for remote endpoints
+        image_url = kwargs.get("image_url", "")
+        if image_url and image_url.startswith("/storage/"):
+            b64 = _resolve_local_image_to_base64(image_url)
+            if b64:
+                kwargs["image_base64"] = b64
+                logger.info("local_image_resolved_to_base64", url=image_url)
+
         url = f"{self._endpoint}{self._get_path()}"
         payload = self._build_request_payload(**kwargs)
 
@@ -248,11 +335,16 @@ class HttpImageAnalysisTool(_HttpToolBase):
         }
 
     def _build_request_payload(self, **kwargs: Any) -> dict[str, Any]:
-        return {
+        payload = {
             "image_url": kwargs.get("image_url", ""),
             "clinical_context": kwargs.get("clinical_context", ""),
             "modality_hint": kwargs.get("modality_hint", "other"),
         }
+        # Forward base64 image if resolved from local storage
+        image_base64 = kwargs.get("image_base64", "")
+        if image_base64:
+            payload["image_base64"] = image_base64
+        return payload
 
     def _parse_response(self, data: dict[str, Any]) -> ImageAnalysisOutput:
         """Parse MedGemma image analysis response into structured output."""
