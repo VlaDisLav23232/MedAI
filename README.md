@@ -1,8 +1,63 @@
+<div align="center">
+
 # MedAI — Agentic Medical AI Assistant
 
-> End-to-end medical AI platform using Claude orchestration, MedGemma specialist models, and explainable AI reports.
+**End-to-end medical AI platform with Claude orchestration, MedGemma specialist models, and explainable AI reports.**
 
-Built for the **AgentForge Hackathon** by SoftServe.
+Built for the **AgentForge Hackathon** by **SoftServe**
+
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Next.js 14](https://img.shields.io/badge/Next.js-14-000000?logo=next.js&logoColor=white)](https://nextjs.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Claude Sonnet 4](https://img.shields.io/badge/Claude-Sonnet_4-D97706?logo=anthropic&logoColor=white)](https://anthropic.com)
+[![Modal](https://img.shields.io/badge/Modal-GPU_Inference-4F46E5)](https://modal.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+</div>
+
+---
+
+## Table of Contents
+
+- [MedAI — Agentic Medical AI Assistant](#medai--agentic-medical-ai-assistant)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+  - [Architecture](#architecture)
+    - [Core Agent Pipeline](#core-agent-pipeline)
+    - [Domain Entities](#domain-entities)
+    - [Real-time Progress (SSE)](#real-time-progress-sse)
+  - [Tech Stack](#tech-stack)
+  - [Quick Start](#quick-start)
+    - [Prerequisites](#prerequisites)
+    - [1. Clone](#1-clone)
+    - [2. Backend](#2-backend)
+    - [3. Frontend](#3-frontend)
+    - [4. Run](#4-run)
+    - [5. Default Credentials](#5-default-credentials)
+  - [Run Modes](#run-modes)
+  - [Project Structure](#project-structure)
+  - [Environment Variables](#environment-variables)
+    - [Backend (`backend/.env`)](#backend-backendenv)
+    - [Frontend (`frontend/.env.local`)](#frontend-frontendenvlocal)
+  - [API Reference](#api-reference)
+  - [GPU Model Deployment](#gpu-model-deployment)
+  - [Testing](#testing)
+  - [Docker Deployment](#docker-deployment)
+  - [License](#license)
+
+---
+
+## Overview
+
+MedAI is a **multi-agent medical AI assistant** that combines a Claude Sonnet 4 orchestrator with specialized Google medical models (MedGemma, MedSigLIP, HeAR) to analyze medical images, audio, and clinical text. The platform produces **explainable, structured reports** with heatmap visualizations and a built-in judge for cross-modal consensus validation.
+
+**Key capabilities:**
+- **Medical image analysis** — X-rays, CT, MRI, dermatology, fundus, histopathology via MedGemma 4B
+- **Clinical reasoning** — Chain-of-thought assessment with evidence citations via MedGemma 27B
+- **Explainability heatmaps** — Zero-shot spatial attention maps via MedSigLIP
+- **Audio analysis** — Respiratory sound classification (wheeze, crackle) via HeAR
+- **Judge agent** — Cross-modal consistency verification before report finalization
+- **Patient timeline** — Longitudinal tracking with historical context via RAG
 
 ---
 
@@ -42,37 +97,21 @@ The doctor can then review, approve, edit, or reject the AI report.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Frontend (Next.js 14)          :3000                       │
-│  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐     │
-│  │ Auth    │ │ Agent    │ │ Patient  │ │ Citations  │     │
-│  │ Login/  │ │ Chat +   │ │ Timeline │ │ Sidebar    │     │
-│  │Register │ │ Pipeline │ │          │ │            │     │
-│  └─────────┘ └──────────┘ └──────────┘ └────────────┘     │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ HTTP + SSE
-┌──────────────────────────▼──────────────────────────────────┐
-│  Backend (FastAPI)              :8000                        │
-│  ┌──────────────────────────────────────────────────┐       │
-│  │ Claude Orchestrator (Opus 4)                     │       │
-│  │  ROUTE → DISPATCH → COLLECT → JUDGE → REPORT    │       │
-│  └──────────────────────────────────────────────────┘       │
-│  Specialist Tools (HTTP → Modal GPU endpoints):              │
-│  ┌────────────┐ ┌────────────┐ ┌──────────────┐            │
-│  │ MedGemma   │ │ MedGemma   │ │ MedSigLIP    │            │
-│  │ 4B (image) │ │ 27B (text) │ │ (heatmaps)   │            │
-│  └────────────┘ └────────────┘ └──────────────┘            │
-│  ┌────────────┐ ┌────────────┐                              │
-│  │ HeAR       │ │ MedASR     │                              │
-│  │ (audio)    │ │ (speech)   │                              │
-│  └────────────┘ └────────────┘                              │
-└─────────────────────────────────────────────────────────────┘
-                    │
-              Modal (cloud GPU)
-```
+### Core Agent Pipeline
 
-### Pipeline Flow
+The orchestrator follows a 5-phase agentic loop: **Route → Dispatch → Collect → Judge → Report**.
+
+<p align="center">
+  <img src="images_readme/core-agents-pipeline-2026-02-09-044935.png" alt="Core Agent Pipeline — Route, Dispatch, Collect, Judge, Report" width="100%" />
+</p>
+
+| Phase | Description |
+|-------|-------------|
+| **1. Route** | Claude analyzes the case and decides which specialist tools to invoke |
+| **2. Dispatch** | Selected tools run **in parallel** via HTTP to Modal GPU endpoints |
+| **3. Collect** | Results gathered; MedSigLIP auto-dispatched for any images |
+| **4. Judge** | A separate Claude agent evaluates cross-modal consensus |
+| **5. Report** | Final structured report with findings, plan, and explainability artifacts |
 
 1. **ROUTE** — Claude analyzes the case and decides which specialist tools to invoke
 2. **DISPATCH** — Selected tools run in parallel via HTTP to Modal GPU endpoints
@@ -80,22 +119,36 @@ The doctor can then review, approve, edit, or reject the AI report.
 4. **JUDGE** — A separate Claude agent evaluates consensus across tool outputs
 5. **REPORT** — Final structured report with findings, plan, and explainability artifacts
 
+
+### Domain Entities
+
+<p align="center">
+  <img src="images_readme/entities-2026-02-09-042107.png" alt="Domain Entities — Users, Patients, Cases, Reports, Timeline" width="100%" />
+</p>
+
 ### Real-time Progress (SSE)
 
-The frontend streams pipeline progress via Server-Sent Events — each tool start/complete/error event renders live as the 30–90 second analysis runs.
+The frontend uses **Server-Sent Events** to stream pipeline progress to the UI in real-time. Each tool start/complete/error event is displayed as the analysis runs, giving doctors visibility into what's happening during the 30–90 second analysis.
 
 ---
 
 ## Prerequisites
 
 ### Required
+| Layer | Technology |
+|:------|:-----------|
+| **Frontend** | Next.js 14 (App Router) · React 18 · TypeScript · Tailwind CSS · Zustand · TanStack Query |
+| **Backend** | FastAPI · Python 3.11+ · Pydantic v2 · structlog · SQLAlchemy (async) |
+| **AI Orchestrator** | Claude Sonnet 4 (Anthropic) — tool-use API with parallel calls |
+| **Image Analysis** | MedGemma 4B IT (Google) — multimodal medical image understanding |
+| **Text Reasoning** | MedGemma 27B IT (Google) — clinical text reasoning |
+| **Explainability** | MedSigLIP (Google) — zero-shot medical image heatmaps |
+| **Audio Analysis** | HeAR (Google) — health acoustic recognition |
+| **Speech-to-Text** | MedASR (Google) — medical speech recognition |
+| **GPU Inference** | Modal (serverless GPU — T4 / A10G / A100) |
+| **Database** | SQLite (dev) / PostgreSQL (prod) |
+| **Auth** | JWT (python-jose + bcrypt) |
 
-| Tool | Version | Check | Install |
-|------|---------|-------|---------|
-| **Python** | 3.11+ | `python3 --version` | [python.org](https://www.python.org/downloads/) |
-| **Node.js** | 18+ | `node --version` | [nodejs.org](https://nodejs.org/) or `nvm install 18` |
-| **npm** | 9+ | `npm --version` | Comes with Node.js |
-| **Git** | any | `git --version` | [git-scm.com](https://git-scm.com/) |
 
 ### Required API Key
 
@@ -161,7 +214,6 @@ npm install
 
 # Copy environment template (default values are fine for local dev)
 cp .env.example .env.local
-
 cd ..
 ```
 
@@ -242,14 +294,12 @@ tail -f medai-logs/frontend.log
 ### Running manually (two terminals)
 
 ```bash
-# Terminal 1: Backend
-cd backend
-source ../.venv/bin/activate
+# Terminal 1 — Backend
+cd backend && source ../.venv/bin/activate
 uvicorn medai.main:app --reload --port 8000
 
-# Terminal 2: Frontend
-cd frontend
-npm run dev
+# Terminal 2 — Frontend
+cd frontend && npm run dev
 ```
 
 Open **http://localhost:3000**.
@@ -426,7 +476,7 @@ Agentic-MedAI-SoftServe/
 
 ---
 
-## API Endpoints
+## API Reference
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -443,7 +493,7 @@ Agentic-MedAI-SoftServe/
 | `POST` | `/api/v1/patients` | Create patient |
 | `GET` | `/api/v1/patients/{id}/timeline` | Patient timeline |
 
-Interactive API docs: **http://localhost:8000/docs**
+> Interactive docs: **http://localhost:8000/docs**
 
 ---
 
@@ -451,19 +501,17 @@ Interactive API docs: **http://localhost:8000/docs**
 
 ```bash
 # Backend unit tests
-cd backend
-source ../.venv/bin/activate
+cd backend && source ../.venv/bin/activate
 pytest tests/unit/ -v
 
-# Backend integration tests (requires running server)
+# Integration tests (requires running server)
 pytest tests/integration/ -v
 
 # End-to-end with live Modal endpoints
 pytest tests/e2e_live_test.py -v
 
 # Frontend tests
-cd frontend
-npm test
+cd frontend && npm test
 ```
 
 ---
@@ -483,7 +531,11 @@ docker-compose up --build
 #   PostgreSQL: localhost:5432
 ```
 
-See [DEPLOY.md](DEPLOY.md) for cloud deployment (GCP Cloud Run + Cloud SQL).
+| Service | URL |
+|:--------|:----|
+| Frontend | http://localhost:3000 |
+| Backend | http://localhost:8000 |
+| PostgreSQL | localhost:5432 |
 
 ---
 
