@@ -154,7 +154,7 @@ class MedGemma27B:
             with torch.inference_mode():
                 output = self.model.generate(
                     **inputs,
-                    max_new_tokens=2048,
+                    max_new_tokens=8192,
                     do_sample=False,
                     pad_token_id=self.tokenizer.eos_token_id,
                     return_dict_in_generate=True,

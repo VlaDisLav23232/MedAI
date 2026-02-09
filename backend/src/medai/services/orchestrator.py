@@ -39,6 +39,7 @@ from medai.domain.entities import (
 from medai.domain.interfaces import BaseJudge, BaseOrchestrator
 from medai.domain.schemas import CaseAnalysisRequest
 from medai.services.tool_registry import ToolRegistry
+from medai.services.pipeline_events import emit_pipeline_event
 
 logger = structlog.get_logger()
 
@@ -75,10 +76,25 @@ RULES:
 4. Use audio_analysis only when audio recordings are provided.
 5. You may call DIFFERENT tools in parallel (one image_analysis + one history_search, etc.).
 5b. Use image_explainability alongside image_analysis when medical images are provided — \
-it generates spatial heatmaps showing which regions triggered each finding. Call both in parallel.
+it generates spatial heatmaps showing which image regions match clinical conditions. Call both in parallel.
+5c. CRITICAL for image_explainability: You MUST provide case-specific `condition_labels` — \
+a list of 5-10 descriptive clinical phrases relevant to THIS patient's presentation. \
+Derive labels from the doctor's query, clinical context, and body part in the image. \
+Examples for a hand X-ray: ["phalangeal fracture", "metacarpal fracture", "joint dislocation", \
+"soft tissue swelling", "normal bone alignment", "avulsion fracture", "boxer fracture"]. \
+Examples for chest X-ray: ["pneumonia with consolidation", "pleural effusion", "cardiomegaly"]. \
+NEVER rely on default labels — they may not match the body part or clinical question. \
+Also provide the correct `modality_hint` (xray, ct, mri, ultrasound, etc.).
 6. NEVER call the same tool more than once per turn. One call per tool name per iteration.
 7. Call text_reasoning ONCE with all available context — do NOT split into multiple calls.
 8. After receiving all tool results, synthesize a BRIEF final diagnosis (under 300 words).
+
+CRITICAL — DISPATCH ALL TOOLS IN YOUR FIRST RESPONSE:
+Call ALL relevant tools in a SINGLE parallel batch in your FIRST turn. \
+Do NOT wait for image results before calling text_reasoning. \
+For example, if the case has images and clinical history, call image_analysis, \
+image_explainability, text_reasoning, and history_search ALL at once. \
+The tools run in parallel so this is faster. Never use multiple turns when one will do.
 
 HISTORY INTEGRATION RULES (CRITICAL):
 - When history_search returns prior records, you MUST consider them in your synthesis.
@@ -127,6 +143,12 @@ class ClaudeOrchestrator(BaseOrchestrator):
             has_audio=bool(request.audio_urls),
             phase="START",
         )
+        await emit_pipeline_event(
+            "pipeline_start",
+            patient_id=request.patient_id,
+            has_images=bool(request.image_urls),
+            has_audio=bool(request.audio_urls),
+        )
 
         # Build tool definitions for Claude
         tool_definitions = self._registry.get_claude_tool_definitions()
@@ -141,12 +163,51 @@ class ClaudeOrchestrator(BaseOrchestrator):
         # ── Phase 1-3: ROUTE → DISPATCH → COLLECT ──
         t0 = time.monotonic()
         logger.info("🔀 PHASE: ROUTE → DISPATCH → COLLECT", phase="TOOLS")
+        await emit_pipeline_event("phase_start", phase="routing", message="Routing case to specialist tools…")
 
         specialist_results = await self._run_tool_loop(
             system_prompt=system_prompt,
             user_content=user_content,
             tool_definitions=tool_definitions,
         )
+
+        # ── Phase 3b: AUTO-DISPATCH image_explainability if images present ──
+        # Claude sometimes skips image_explainability even when instructed.
+        # Guarantee heatmaps are always generated when images are provided.
+        siglip_name = ToolName.IMAGE_EXPLAINABILITY.value
+        if (
+            request.image_urls
+            and siglip_name not in specialist_results.results
+            and siglip_name not in specialist_results.errors
+        ):
+            # Generate case-specific condition labels from clinical context
+            siglip_input = await self._build_smart_siglip_input(
+                request, specialist_results,
+            )
+            logger.info(
+                "🔬 AUTO_DISPATCH_SIGLIP — Claude did not call image_explainability, forcing it",
+                phase="TOOLS",
+                image_count=len(request.image_urls),
+                labels=siglip_input.get("condition_labels", []),
+                modality=siglip_input.get("modality_hint"),
+            )
+            t_sig = time.monotonic()
+            siglip_results = await self.dispatch_tools(
+                tool_names=[ToolName.IMAGE_EXPLAINABILITY],
+                tool_inputs={
+                    ToolName.IMAGE_EXPLAINABILITY: siglip_input,
+                },
+            )
+            sig_elapsed = time.monotonic() - t_sig
+            specialist_results.results.update(siglip_results.results)
+            specialist_results.errors.update(siglip_results.errors)
+            self._tool_timings[siglip_name] = round(sig_elapsed, 2)
+            logger.info(
+                "✅ AUTO_SIGLIP_COMPLETE",
+                phase="TOOLS",
+                elapsed_s=round(sig_elapsed, 1),
+                success=siglip_name in siglip_results.results,
+            )
 
         tools_elapsed = time.monotonic() - t0
         logger.info(
@@ -156,10 +217,18 @@ class ClaudeOrchestrator(BaseOrchestrator):
             successful=list(specialist_results.results.keys()),
             errors=list(specialist_results.errors.keys()),
         )
+        await emit_pipeline_event(
+            "phase_complete",
+            phase="tools",
+            elapsed_s=round(tools_elapsed, 1),
+            tools_called=list(specialist_results.results.keys()),
+            tools_failed=list(specialist_results.errors.keys()),
+        )
 
         # ── Phase 4: JUDGE ──
         t0 = time.monotonic()
         logger.info("⚖️  PHASE: JUDGE", phase="JUDGE")
+        await emit_pipeline_event("phase_start", phase="judging", message="Judge evaluating tool consensus…")
 
         if not self._settings.judge_enabled:
             logger.info("⏭️  JUDGE_SKIPPED (judge_enabled=false)", phase="JUDGE")
@@ -230,10 +299,18 @@ class ClaudeOrchestrator(BaseOrchestrator):
             confidence=judgment.confidence,
             requery_cycles=cycle,
         )
+        await emit_pipeline_event(
+            "phase_complete",
+            phase="judging",
+            elapsed_s=round(judge_elapsed, 1),
+            verdict=judgment.verdict.value,
+            confidence=judgment.confidence,
+        )
 
         # ── Phase 5: REPORT ──
         t0 = time.monotonic()
         logger.info("📝 PHASE: REPORT", phase="REPORT")
+        await emit_pipeline_event("phase_start", phase="generating_report", message="Generating final report…")
 
         report = await self._generate_report(request, specialist_results, judgment)
 
@@ -420,6 +497,7 @@ class ClaudeOrchestrator(BaseOrchestrator):
                 tool=tool_name_str,
                 input_keys=list(tool_input.keys()) if isinstance(tool_input, dict) else [],
             )
+            await emit_pipeline_event("tool_start", tool=tool_name_str)
 
             try:
                 tool_name = ToolName(tool_name_str)
@@ -434,6 +512,9 @@ class ClaudeOrchestrator(BaseOrchestrator):
                     "✅ TOOL_COMPLETE",
                     tool=tool_name_str,
                     elapsed_s=round(elapsed, 1),
+                )
+                await emit_pipeline_event(
+                    "tool_complete", tool=tool_name_str, elapsed_s=round(elapsed, 1),
                 )
 
                 content = output.model_dump_json() if hasattr(output, "model_dump_json") else json.dumps(output)
@@ -455,6 +536,9 @@ class ClaudeOrchestrator(BaseOrchestrator):
                     tool=tool_name_str,
                     elapsed_s=round(elapsed, 1),
                     error=str(e),
+                )
+                await emit_pipeline_event(
+                    "tool_error", tool=tool_name_str, elapsed_s=round(elapsed, 1), error=str(e),
                 )
                 results.errors[tool_name_str] = str(e)
                 return {
@@ -623,6 +707,100 @@ class ClaudeOrchestrator(BaseOrchestrator):
             base_input["modality_hint"] = "xray"  # safe default
 
         return base_input
+
+    async def _build_smart_siglip_input(
+        self,
+        request: CaseAnalysisRequest,
+        specialist_results: SpecialistResults,
+    ) -> dict[str, Any]:
+        """Generate case-specific SigLIP parameters using Claude.
+
+        Derives modality + condition labels from clinical context,
+        doctor's query, and any available image_analysis results.
+        Falls back to generic 'other' if generation fails.
+        """
+        # Gather context for label generation
+        context_parts = []
+        if request.doctor_query:
+            context_parts.append(f"Doctor's query: {request.doctor_query}")
+        if request.clinical_context:
+            context_parts.append(f"Clinical context: {request.clinical_context}")
+        if request.patient_history_text:
+            context_parts.append(f"Patient history: {request.patient_history_text[:500]}")
+
+        # Extract clues from MedGemma 4B image analysis if available
+        img_result = specialist_results.results.get(ToolName.IMAGE_ANALYSIS.value)
+        if img_result and hasattr(img_result, "findings") and img_result.findings:
+            findings_text = "; ".join(f.finding for f in img_result.findings[:5])
+            context_parts.append(f"Image analysis findings: {findings_text}")
+        if img_result and hasattr(img_result, "modality_detected"):
+            context_parts.append(f"Detected modality: {img_result.modality_detected}")
+
+        context_str = "\n".join(context_parts)
+
+        if not context_str.strip():
+            # No context at all — fall back to generic
+            return {
+                "image_url": request.image_urls[0],
+                "modality_hint": "other",
+            }
+
+        # Quick Claude call to generate labels
+        try:
+            label_response = await self._client.messages.create(
+                model="claude-sonnet-4-5-20250929",
+                max_tokens=500,
+                system=(
+                    "You are a medical imaging expert. Given clinical context, generate "
+                    "condition labels for zero-shot image classification.\n"
+                    "Return ONLY a JSON object with two fields:\n"
+                    '- "modality": one of: xray, ct, mri, ultrasound, fundus, '
+                    'dermatology, histopathology, pet, mammography, endoscopy, other\n'
+                    '- "labels": array of 6-10 descriptive clinical phrases relevant '
+                    'to the body part and clinical question. Each label should be '
+                    'a concise descriptive phrase (e.g. "phalangeal fracture", '
+                    '"joint dislocation", "soft tissue swelling"). '
+                    'Include at least one "normal" label.\n'
+                    'Return ONLY the JSON, no markdown.'
+                ),
+                messages=[{"role": "user", "content": context_str}],
+            )
+
+            raw = label_response.content[0].text.strip()
+            # Strip markdown fences if present
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            parsed = json.loads(raw)
+
+            modality = parsed.get("modality", "other")
+            labels = parsed.get("labels", [])
+
+            if not labels or not isinstance(labels, list):
+                raise ValueError("Empty or invalid labels")
+
+            logger.info(
+                "🏷️  SMART_SIGLIP_LABELS",
+                modality=modality,
+                label_count=len(labels),
+                labels=labels,
+            )
+
+            return {
+                "image_url": request.image_urls[0],
+                "modality_hint": modality,
+                "condition_labels": labels,
+                "clinical_context": request.doctor_query or "",
+            }
+
+        except Exception as e:
+            logger.warning(
+                "⚠️ SMART_LABEL_GENERATION_FAILED — falling back to generic",
+                error=str(e),
+            )
+            return {
+                "image_url": request.image_urls[0],
+                "modality_hint": "other",
+            }
 
 
 class MockOrchestrator(BaseOrchestrator):
