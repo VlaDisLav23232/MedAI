@@ -116,6 +116,7 @@ class FinalReportRow(Base):
     )
     doctor_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     pipeline_metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    image_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     __table_args__ = (
         Index("ix_final_reports_patient_id", "patient_id"),

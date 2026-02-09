@@ -4,7 +4,7 @@ import React from "react";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, CheckCircle2, ShieldAlert, Info } from "lucide-react";
 
-type Severity = "low" | "moderate" | "high" | "critical" | "normal" | "warning";
+type Severity = "low" | "moderate" | "high" | "critical" | "normal" | "warning" | (string & {});
 
 const severityConfig: Record<
   Severity,
@@ -61,7 +61,9 @@ interface SeverityBadgeProps {
 }
 
 export function SeverityBadge({ severity, size = "sm", className }: SeverityBadgeProps) {
-  const config = severityConfig[severity];
+  if (!severity) return null;
+  const config = severityConfig[severity] ?? severityConfig.low;
+  if (!config) return null;
   const Icon = config.icon;
 
   return (

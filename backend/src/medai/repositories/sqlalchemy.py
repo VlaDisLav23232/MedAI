@@ -352,6 +352,7 @@ class SqlAlchemyReportRepository(BaseReportRepository):
             created_at=row.created_at,
             doctor_notes=row.doctor_notes,
             pipeline_metrics=_deserialize_metrics(row.pipeline_metrics),
+            image_urls=row.image_urls or [],
         )
 
     @staticmethod
@@ -374,4 +375,5 @@ class SqlAlchemyReportRepository(BaseReportRepository):
             created_at=report.created_at,
             doctor_notes=report.doctor_notes,
             pipeline_metrics=_serialize_metrics(report.pipeline_metrics),
+            image_urls=_json_safe(report.image_urls) if report.image_urls else None,
         )

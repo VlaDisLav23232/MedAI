@@ -108,6 +108,260 @@ export default function CasePage({
   const historySearch = report?.specialist_outputs?.history_search;
   const conditionScores = explainability?.condition_scores ?? [];
 
+  // ── Plain-text report export ───────────────────────────────
+  const exportPlainText = () => {
+    if (!report) return;
+
+    const sep = "=".repeat(60);
+    const sub = "-".repeat(40);
+    const lines: string[] = [];
+
+    const add = (s: string) => lines.push(s);
+    const blank = () => lines.push("");
+
+    add(sep);
+    add("  MEDAI CLINICAL REPORT");
+    add(sep);
+    blank();
+    add(`Report ID    : ${report.id}`);
+    add(`Patient      : ${patient?.name ?? "Unknown"}`);
+    add(`MRN          : ${patient?.medical_record_number ?? "—"}`);
+    if (patient?.date_of_birth) add(`DOB          : ${patient.date_of_birth}`);
+    if (patient?.gender) add(`Gender       : ${patient.gender}`);
+    add(`Generated    : ${reportQuery.data?.created_at ? new Date(reportQuery.data.created_at).toLocaleString() : "N/A"}`);
+    add(`Exported     : ${new Date().toLocaleString()}`);
+    blank();
+
+    add(sep);
+    add("  DIAGNOSIS");
+    add(sep);
+    blank();
+    add(`Diagnosis    : ${report.diagnosis}`);
+    add(`Confidence   : ${(report.confidence * 100).toFixed(1)}%`);
+    if (report.confidence_method) add(`Method       : ${report.confidence_method}`);
+    blank();
+
+    add(sub);
+    add("  Evidence Summary");
+    add(sub);
+    add(report.evidence_summary || "N/A");
+    blank();
+
+    add(sub);
+    add("  Timeline Impact");
+    add(sub);
+    add(report.timeline_impact || "N/A");
+    blank();
+
+    if (report.plan?.length) {
+      add(sub);
+      add("  Treatment Plan");
+      add(sub);
+      report.plan.forEach((step, i) => add(`  ${i + 1}. ${step}`));
+      blank();
+    }
+
+    if (findings.length) {
+      add(sep);
+      add("  FINDINGS");
+      add(sep);
+      blank();
+      findings.forEach((f, i) => {
+        add(`  ${i + 1}. ${f.finding}`);
+        add(`     Confidence : ${(f.confidence * 100).toFixed(0)}%`);
+        add(`     Severity   : ${f.severity}`);
+        if (f.explanation) add(`     Detail     : ${f.explanation}`);
+        blank();
+      });
+    }
+
+    if (conditionScores.length) {
+      add(sep);
+      add("  CONDITION SCORES (MedSigLIP Zero-Shot)");
+      add(sep);
+      blank();
+      conditionScores.forEach((cs) => {
+        add(`  • ${cs.label.padEnd(30)} ${(cs.probability * 100).toFixed(2)}%`);
+      });
+      blank();
+    }
+
+    if (imageAnalysis) {
+      add(sep);
+      add("  IMAGE ANALYSIS (MedGemma 4B)");
+      add(sep);
+      blank();
+      if (imageAnalysis.modality_detected) add(`Modality          : ${imageAnalysis.modality_detected}`);
+      if (imageAnalysis.inference?.model_id) add(`Model             : ${imageAnalysis.inference.model_id}`);
+      if (imageAnalysis.inference?.latency_ms) add(`Latency           : ${imageAnalysis.inference.latency_ms}ms`);
+      blank();
+      if (imageAnalysis.findings?.length) {
+        add("Findings:");
+        imageAnalysis.findings.forEach((f, i) => {
+          add(`  ${i + 1}. ${f.finding} (confidence: ${(f.confidence * 100).toFixed(0)}%, severity: ${f.severity})`);
+          if (f.explanation) add(`     ${f.explanation}`);
+        });
+        blank();
+      }
+      if (imageAnalysis.differential_diagnoses?.length) {
+        add("Differential Diagnoses:");
+        imageAnalysis.differential_diagnoses.forEach((d) => add(`  • ${d}`));
+        blank();
+      }
+      if (imageAnalysis.recommended_followup?.length) {
+        add("Recommended Follow-up:");
+        imageAnalysis.recommended_followup.forEach((r) => add(`  • ${r}`));
+        blank();
+      }
+    }
+
+    if (textReasoning) {
+      add(sep);
+      add("  TEXT REASONING (MedGemma 27B)");
+      add(sep);
+      blank();
+      if (textReasoning.assessment) {
+        add("Assessment:");
+        add(textReasoning.assessment);
+        blank();
+      }
+      if (textReasoning.confidence != null) add(`Confidence        : ${(textReasoning.confidence * 100).toFixed(1)}%`);
+      if (textReasoning.inference?.model_id) add(`Model             : ${textReasoning.inference.model_id}`);
+      blank();
+      if (textReasoning.evidence_citations?.length) {
+        add("Evidence Citations:");
+        textReasoning.evidence_citations.forEach((c) => add(`  • ${c}`));
+        blank();
+      }
+      if (textReasoning.plan_suggestions?.length) {
+        add("Plan Suggestions:");
+        textReasoning.plan_suggestions.forEach((p) => add(`  • ${p}`));
+        blank();
+      }
+      if (textReasoning.contraindication_flags?.length) {
+        add("Contraindication Flags:");
+        textReasoning.contraindication_flags.forEach((f) => add(`  ⚠ ${f}`));
+        blank();
+      }
+      if (textReasoning.reasoning_chain?.length) {
+        add("Reasoning Chain:");
+        textReasoning.reasoning_chain.forEach((s) => {
+          add(`  Step ${s.step}: [${s.action}] ${s.thought}`);
+          if (s.observation) add(`    → ${s.observation}`);
+        });
+        blank();
+      }
+    }
+
+    if (historySearch) {
+      add(sep);
+      add("  PATIENT HISTORY CONTEXT");
+      add(sep);
+      blank();
+      if (historySearch.timeline_context) {
+        add(historySearch.timeline_context);
+        blank();
+      }
+      if (historySearch.relevant_records?.length) {
+        add("Relevant Records:");
+        historySearch.relevant_records.forEach((r) => {
+          add(`  [${r.date}] ${r.summary}`);
+          add(`    Relevance: ${r.clinical_relevance} (score: ${r.similarity_score.toFixed(2)})`);
+        });
+        blank();
+      }
+    }
+
+    if (reasoningSteps.length) {
+      add(sep);
+      add("  REASONING TRACE");
+      add(sep);
+      blank();
+      reasoningSteps.forEach((s) => {
+        add(`  Step ${s.step}: ${s.action}`);
+        if (s.reasoning) add(`    Reasoning  : ${s.reasoning}`);
+        if (s.observation) add(`    Observation: ${s.observation}`);
+        if (s.tool) add(`    Tool       : ${s.tool}`);
+      });
+      blank();
+    }
+
+    if (report.judge_verdict) {
+      add(sep);
+      add("  JUDGE VERDICT");
+      add(sep);
+      blank();
+      add(`Status          : ${report.judge_verdict.status.toUpperCase()}`);
+      add(`Confidence      : ${(report.judge_verdict.confidence * 100).toFixed(1)}%`);
+      add(`Reasoning       : ${report.judge_verdict.reasoning}`);
+      blank();
+      if (report.judge_verdict.contradictions?.length) {
+        add("Contradictions:");
+        report.judge_verdict.contradictions.forEach((c) => add(`  ⚠ ${c}`));
+        blank();
+      }
+      if (report.judge_verdict.low_confidence_items?.length) {
+        add("Low Confidence Items:");
+        report.judge_verdict.low_confidence_items.forEach((i) => add(`  • ${i}`));
+        blank();
+      }
+      if (report.judge_verdict.missing_context?.length) {
+        add("Missing Context:");
+        report.judge_verdict.missing_context.forEach((m) => add(`  ? ${m}`));
+        blank();
+      }
+    }
+
+    if (report.pipeline_metrics) {
+      const pm = report.pipeline_metrics;
+      add(sep);
+      add("  PIPELINE METRICS");
+      add(sep);
+      blank();
+      add(`Total time      : ${pm.total_s.toFixed(1)}s`);
+      add(`Tools phase     : ${pm.tools_s.toFixed(1)}s`);
+      add(`Judge phase     : ${pm.judge_s.toFixed(1)}s`);
+      add(`Report phase    : ${pm.report_s.toFixed(1)}s`);
+      if (pm.tools_called?.length) add(`Tools called    : ${pm.tools_called.join(", ")}`);
+      if (pm.tools_failed?.length) add(`Tools failed    : ${pm.tools_failed.join(", ")}`);
+      add(`Requery cycles  : ${pm.requery_cycles}`);
+      blank();
+      if (pm.tool_timings && Object.keys(pm.tool_timings).length) {
+        add("Tool Timings:");
+        Object.entries(pm.tool_timings).forEach(([tool, time]) => {
+          add(`  ${tool.padEnd(25)} ${Number(time).toFixed(2)}s`);
+        });
+        blank();
+      }
+    }
+
+    add(sep);
+    add("  DISCLAIMER");
+    add(sep);
+    blank();
+    add("This report was generated by an AI system and is intended for");
+    add("informational purposes only. It does NOT constitute medical advice,");
+    add("diagnosis, or treatment recommendation. A qualified healthcare");
+    add("professional must review and validate all findings before any");
+    add("clinical decision is made.");
+    blank();
+    add(sep);
+    add("  END OF REPORT");
+    add(sep);
+
+    // Download as .txt file
+    const text = lines.join("\n");
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `MedAI_Report_${report.id}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // ── Approval handlers (API-backed) ─────────────────────
 
   const handleApproval = async (
@@ -210,12 +464,12 @@ export default function CasePage({
               </span>
               <ConfidenceBadge confidence={report.confidence} />
               <button
-                onClick={() => window.print()}
+                onClick={exportPlainText}
                 className="print:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-surface-dark-3 hover:bg-gray-200 dark:hover:bg-surface-dark transition"
-                title="Export report as PDF"
+                title="Export report as plain text"
               >
                 <Download size={14} />
-                Export PDF
+                Export TXT
               </button>
             </div>
           </div>
@@ -319,7 +573,7 @@ export default function CasePage({
               {/* Image Viewer — 3 cols */}
               <div className="lg:col-span-3">
                 <ImageViewer
-                  imageUrl={report.original_image_url || explainability?.attention_heatmap_url}
+                  originalImageUrl={report.original_image_url}
                   conditionScores={conditionScores}
                   selectedLabel={selectedConditionLabel}
                   onSelectLabel={setSelectedConditionLabel}
