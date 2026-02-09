@@ -1,19 +1,22 @@
 "use client";
 
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { CitationsSidebar } from "@/components/agent/CitationsSidebar";
 import { ChatArea } from "@/components/agent/ChatArea";
 import { ChatInput } from "@/components/agent/ChatInput";
+
 import { PromptTips } from "@/components/agent/PromptTips";
+import { ExamplePrompts } from "@/components/agent/ExamplePrompts";
+
 import { AgentStatusIndicator } from "@/components/shared/AgentStatusIndicator";
 import { PatientSelector } from "@/components/agent/PatientSelector";
 import { useToast } from "@/components/shared/Toast";
 import { apiClient } from "@/lib/api/client";
 import { mapApiResponseToAIReport } from "@/lib/api/mappers";
 import { useChatStore, useUIStore } from "@/lib/store";
-import { filesToImageDataUrls, filesToAudioDataUrls, getFileCategory } from "@/lib/file-upload";
+import { getFileCategory } from "@/lib/file-upload";
 import type { ChatMessage } from "@/lib/types";
 import {
   PanelLeftOpen,
@@ -26,6 +29,10 @@ import {
 
 export default function AgentPage() {
   const searchParams = useSearchParams();
+
+  // Local state for controlled chat input
+  const [inputValue, setInputValue] = useState("");
+  const [showExamples, setShowExamples] = useState(true);
 
   // Zustand chat store
   const messages = useChatStore((s) => s.messages);
@@ -90,26 +97,43 @@ export default function AgentPage() {
       try {
         setAgentStatus("analyzing_text");
 
-        // Convert attached files to data URLs for the API
-        const imageUrls = attachments ? await filesToImageDataUrls(attachments) : [];
-        const audioUrls = attachments ? await filesToAudioDataUrls(attachments) : [];
+        // Upload attached files to server first, get back URLs sorted by category
+        let imageUrls: string[] = [];
+        let audioUrls: string[] = [];
+        let documentUrls: string[] = [];
+
+        if (attachments && attachments.length > 0) {
+          const uploadRes = await apiClient.uploadFiles(attachments);
+          if (uploadRes.error) {
+            throw new Error(`File upload failed: ${uploadRes.error}`);
+          }
+          imageUrls = uploadRes.data?.image_urls ?? [];
+          audioUrls = uploadRes.data?.audio_urls ?? [];
+          documentUrls = uploadRes.data?.document_urls ?? [];
+        }
 
         const res = await apiClient.analyzeCase({
           patient_id: currentPatient.id,
           doctor_query: text,
           ...(imageUrls.length > 0 && { image_urls: imageUrls }),
           ...(audioUrls.length > 0 && { audio_urls: audioUrls }),
+          ...(documentUrls.length > 0 && { document_urls: documentUrls }),
         });
+
+        if (res.error || !res.data) {
+          throw new Error(res.error || "Analysis returned no data");
+        }
+        const data = res.data;
         setAgentStatus("complete");
 
         // Map the response to a structured AI report
-        const mappedReport = mapApiResponseToAIReport(res);
+        const mappedReport = mapApiResponseToAIReport(data);
 
         // Build rich citations from findings + specialist summaries
         const allCitations: import("@/lib/types").Citation[] = [];
 
         // Findings → "finding" type citations
-        res.findings.forEach((f, i) => {
+        data.findings.forEach((f, i) => {
           allCitations.push({
             id: `cit-finding-${i}`,
             type: "finding",
@@ -121,8 +145,8 @@ export default function AgentPage() {
         });
 
         // Specialist summaries → typed citations for sidebar tabs
-        if (res.specialist_summaries) {
-          Object.entries(res.specialist_summaries).forEach(([tool, summary], i) => {
+        if (data.specialist_summaries) {
+          Object.entries(data.specialist_summaries).forEach(([tool, summary], i) => {
             if (tool.includes("image") || tool === "image_analysis") {
               allCitations.push({
                 id: `cit-imaging-${i}`,
@@ -162,7 +186,7 @@ export default function AgentPage() {
         const agentMsg: ChatMessage = {
           id: `msg-${Date.now() + 1}`,
           role: "agent",
-          content: `**Diagnosis:** ${res.diagnosis} (${Math.round(res.confidence * 100)}% confidence)\n\n${res.evidence_summary}\n\n**Plan:**\n${res.plan.map((p) => `- ${p}`).join("\n")}\n\n[View Full Report →](/case/${res.report_id})`,
+          content: `**Diagnosis:** ${data.diagnosis} (${Math.round(data.confidence * 100)}% confidence)\n\n${data.evidence_summary}\n\n**Plan:**\n${data.plan.map((p) => `- ${p}`).join("\n")}\n\n[View Full Report →](/case/${data.report_id})`,
           timestamp: new Date().toISOString(),
           report: mappedReport,
           citations: allCitations,
@@ -192,7 +216,14 @@ export default function AgentPage() {
     setMessages([]);
     setCitations([]);
     setAgentStatus("idle");
+    setInputValue("");
+    setShowExamples(true);
   }, [setMessages, setCitations, setAgentStatus]);
+
+  const handleSelectExample = useCallback((prompt: string) => {
+    setInputValue(prompt);
+    setShowExamples(false);
+  }, []);
 
   return (
     <div className="flex h-screen pt-16 bg-gray-50 dark:bg-surface-dark">
@@ -280,8 +311,19 @@ export default function AgentPage() {
           <div className="flex items-center gap-2 mb-1 justify-end">
             <PromptTips />
           </div>
+          {/* Show example prompts when no messages yet */}
+          {messages.length === 0 && showExamples && currentPatient && (
+            <ExamplePrompts
+              onSelectExample={handleSelectExample}
+              onDismiss={() => setShowExamples(false)}
+              className="mb-4"
+            />
+          )}
+
           <ChatInput
             onSend={handleSend}
+            value={inputValue}
+            onValueChange={setInputValue}
             disabled={
               (agentStatus !== "idle" && agentStatus !== "complete" && agentStatus !== "error") ||
               !currentPatient
