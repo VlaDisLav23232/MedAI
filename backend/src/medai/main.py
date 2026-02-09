@@ -10,12 +10,15 @@ from typing import AsyncGenerator
 
 import structlog
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from medai import __version__
 from medai.api.routes import health, cases, patients, auth
+from medai.api.routes import transcription as transcription_route
 from medai.config import get_settings
 from medai.repositories.database import dispose_db, init_db
+from medai.repositories.seed_init import seed_initial_data
 
 
 @asynccontextmanager
@@ -34,7 +37,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize database tables (dev convenience — use Alembic in prod)
     await init_db()
     logger.info("database_initialized")
+# Seed admin user + demo patients
+    await seed_initial_data()
 
+    
     yield  # App is running
 
     # Clean shutdown
@@ -57,6 +63,11 @@ def create_app() -> FastAPI:
         debug=settings.debug,
     )
 
+    # ── Static Files (local artifacts) ────────────────────
+    storage_path = settings.storage_local_path
+    storage_path.mkdir(parents=True, exist_ok=True)
+    app.mount("/storage", StaticFiles(directory=str(storage_path)), name="storage")
+
     # ── CORS (restricted to configured origins) ────────────
     app.add_middleware(
         CORSMiddleware,
@@ -71,6 +82,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(cases.router, prefix="/api/v1")
     app.include_router(patients.router, prefix="/api/v1")
+    app.include_router(transcription_route.router, prefix="/api/v1")
 
     return app
 

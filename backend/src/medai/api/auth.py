@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import bcrypt
+import structlog
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -22,6 +23,8 @@ from medai.config import get_settings
 from medai.domain.entities import User
 from medai.repositories.database import get_db_session
 from medai.repositories.sqlalchemy import SqlAlchemyUserRepository
+
+logger = structlog.get_logger()
 
 # ── Password hashing ──────────────────────────────────────
 
@@ -70,6 +73,8 @@ async def get_current_user(
 
     Raises 401 if token is invalid, expired, or user not found.
     """
+    logger.info("get_current_user_called", token_prefix=token[:20] if token else "None")
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",
@@ -84,17 +89,24 @@ async def get_current_user(
             algorithms=[settings.jwt_algorithm],
         )
         user_id: str | None = payload.get("sub")
+        logger.info("jwt_decoded", user_id=user_id, payload_keys=list(payload.keys()))
         if user_id is None:
+            logger.warning("jwt_missing_sub")
             raise credentials_exception
-    except JWTError:
+    except JWTError as e:
+        logger.error("jwt_decode_error", error=str(e))
         raise credentials_exception
 
     user_repo = SqlAlchemyUserRepository(session)
     user = await user_repo.get_by_id(user_id)
+    
+    logger.info("user_lookup", user_id=user_id, found=user is not None, is_active=user.is_active if user else None)
 
     if user is None or not user.is_active:
+        logger.warning("user_not_found_or_inactive", user_id=user_id)
         raise credentials_exception
 
+    logger.info("auth_success", user_id=user_id, user_email=user.email)
     return user
 
 
