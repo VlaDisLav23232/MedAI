@@ -32,6 +32,7 @@ import {
   Eye,
   Activity,
   Shield,
+  Download,
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -207,12 +208,35 @@ export default function CasePage({
                 })}
               </span>
               <ConfidenceBadge confidence={report.confidence} />
+              <button
+                onClick={() => window.print()}
+                className="print:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-surface-dark-3 hover:bg-gray-200 dark:hover:bg-surface-dark transition"
+                title="Export report as PDF"
+              >
+                <Download size={14} />
+                Export PDF
+              </button>
             </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* ══ Print-only header ═══════════════════════════ */}
+        <div className="hidden print:block mb-6 pb-4 border-b-2 border-gray-300">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold">MedAI Clinical Report</h1>
+              <p className="text-sm text-gray-600 mt-1">
+                Patient: {patient?.name ?? "Unknown"} · MRN: {patient?.medical_record_number ?? "—"} · Report: {report.id}
+              </p>
+            </div>
+            <div className="text-right text-xs text-gray-500">
+              <p>Generated: {new Date(reportQuery.data?.created_at ?? "").toLocaleString()}</p>
+              <p>Printed: {new Date().toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
         {/* ══ 1. Diagnosis Summary ════════════════════════ */}
         <section className="p-5 rounded-2xl bg-gradient-to-r from-brand-500/10 via-accent-cyan/5 to-accent-violet/10 border border-brand-200 dark:border-brand-800">
           <div className="flex items-start gap-4">
@@ -501,7 +525,9 @@ export default function CasePage({
 
         {/* ══ 7. Pipeline Performance ════════════════════ */}
         {report.pipeline_metrics && (
-          <PipelineMetricsBar metrics={report.pipeline_metrics} />
+          <div className="print:hidden">
+            <PipelineMetricsBar metrics={report.pipeline_metrics} />
+          </div>
         )}
 
         {/* ══ 8. Historical Context ══════════════════════ */}
@@ -563,13 +589,14 @@ export default function CasePage({
         )}
 
         {/* ══ 9. Approval Bar ════════════════════════════ */}
-        <section>
+        <section className="print:hidden">
           <ApprovalBar
             status={approvalStatus}
             loading={approveReportMutation.isPending}
             onApprove={(notes) => handleApproval("approved", notes)}
             onReject={(notes) => handleApproval("rejected", notes)}
             onEditApprove={handleEditApprove}
+            onRevise={() => setApprovalStatus("pending")}
             currentReport={
               report
                 ? {

@@ -441,7 +441,12 @@ export default function AgentPage() {
               New Chat
             </button>
 
-            <button className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-surface-dark-3 transition text-gray-400" aria-label="Settings (coming soon)" title="Settings — coming soon" disabled>
+            <button
+              onClick={() => toastWarning("Coming Soon", "Settings panel is under development.")}
+              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-surface-dark-3 transition text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              aria-label="Settings (coming soon)"
+              title="Settings — coming soon"
+            >
               <Settings size={16} />
             </button>
           </div>

@@ -31,6 +31,7 @@ class CaseAnalysisRequest(BaseModel):
     encounter_id: str | None = None
     image_urls: list[str] = Field(default_factory=list)
     audio_urls: list[str] = Field(default_factory=list)
+    document_urls: list[str] = Field(default_factory=list)
     clinical_context: str = ""
     doctor_query: str
     patient_history_text: str | None = None
@@ -135,6 +136,7 @@ class TimelineEventResponse(BaseModel):
     date: datetime
     event_type: str
     summary: str
+    source_id: str | None = None
     source_type: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 

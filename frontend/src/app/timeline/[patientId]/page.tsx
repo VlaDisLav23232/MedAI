@@ -130,7 +130,6 @@ export default function TimelinePage({
           ...mapped,
           patient_id: timelineQuery.data!.patient_id,
           event_type: normalizeEventType(mapped.event_type),
-          source_id: (e.metadata?.source_id as string) || e.id,
           severity: (e.metadata?.severity as TimelineEvent["severity"]) || undefined,
         };
       });
