@@ -111,9 +111,10 @@ export function ReasoningTrace({ steps, className }: ReasoningTraceProps) {
                 const isOpen = expandedSteps.has(step.step);
                 const isLast = i === steps.length - 1;
                 // First sentence for collapsed view
+                const thought = step.reasoning ?? '';
                 const firstSentence =
-                  step.thought.split(/(?<=\.)\s/)[0] || step.thought;
-                const hasMore = step.thought.length > firstSentence.length;
+                  thought.split(/(?<=\.)\s/)[0] || thought;
+                const hasMore = thought.length > firstSentence.length;
 
                 return (
                   <li
@@ -185,7 +186,7 @@ export function ReasoningTrace({ steps, className }: ReasoningTraceProps) {
                               transition={{ duration: 0.15 }}
                               className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed mt-1.5 overflow-hidden"
                             >
-                              {step.thought}
+                              {step.reasoning}
                             </motion.p>
                           )}
                         </AnimatePresence>

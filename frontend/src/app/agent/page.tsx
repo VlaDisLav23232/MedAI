@@ -14,10 +14,11 @@ import { AgentStatusIndicator } from "@/components/shared/AgentStatusIndicator";
 import { PatientSelector } from "@/components/agent/PatientSelector";
 import { useToast } from "@/components/shared/Toast";
 import { apiClient } from "@/lib/api/client";
+import type { PipelineEvent } from "@/lib/api/client";
 import { mapApiResponseToAIReport } from "@/lib/api/mappers";
 import { useChatStore, useUIStore } from "@/lib/store";
 import { getFileCategory } from "@/lib/file-upload";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, ToolResult } from "@/lib/types";
 import {
   PanelLeftOpen,
   PanelLeftClose,
@@ -94,15 +95,42 @@ export default function AgentPage() {
         return;
       }
 
-      try {
-        setAgentStatus("analyzing_text");
+      // Live pipeline progress message — updated in real-time via SSE events
+      const progressMsgId = `msg-progress-${Date.now()}`;
+      const toolResults: ToolResult[] = [];
+      let currentPhaseMsg = "Routing case to specialist tools…";
 
-        // Upload attached files to server first, get back URLs sorted by category
+      const updateProgressMessage = () => {
+        const progressMsg: ChatMessage = {
+          id: progressMsgId,
+          role: "agent",
+          content: `**Pipeline:** ${currentPhaseMsg}`,
+          timestamp: new Date().toISOString(),
+          toolResults: [...toolResults],
+        };
+        // Replace the progress message in-place
+        setMessages((prev: ChatMessage[]) => {
+          const idx = prev.findIndex((m: ChatMessage) => m.id === progressMsgId);
+          if (idx === -1) return [...prev, progressMsg];
+          const next = [...prev];
+          next[idx] = progressMsg;
+          return next;
+        });
+      };
+
+      // Show initial progress
+      updateProgressMessage();
+
+      try {
+        // Upload attached files to server first
         let imageUrls: string[] = [];
         let audioUrls: string[] = [];
         let documentUrls: string[] = [];
 
         if (attachments && attachments.length > 0) {
+          currentPhaseMsg = "Uploading files…";
+          updateProgressMessage();
+
           const uploadRes = await apiClient.uploadFiles(attachments);
           if (uploadRes.error) {
             throw new Error(`File upload failed: ${uploadRes.error}`);
@@ -112,13 +140,108 @@ export default function AgentPage() {
           documentUrls = uploadRes.data?.document_urls ?? [];
         }
 
-        const res = await apiClient.analyzeCase({
+        setAgentStatus("analyzing_text");
+
+        const analysisRequest = {
           patient_id: currentPatient.id,
           doctor_query: text,
           ...(imageUrls.length > 0 && { image_urls: imageUrls }),
           ...(audioUrls.length > 0 && { audio_urls: audioUrls }),
           ...(documentUrls.length > 0 && { document_urls: documentUrls }),
-        });
+        };
+
+        // Map SSE event types to human-friendly AgentStatus values
+        const phaseToStatus: Record<string, string> = {
+          routing: "routing",
+          tools: "analyzing_text",
+          judging: "judging",
+          generating_report: "generating_report",
+        };
+
+        const toolDisplayNames: Record<string, string> = {
+          image_analysis: "Image Analysis (MedGemma 4B)",
+          text_reasoning: "Text Reasoning (MedGemma 27B)",
+          audio_analysis: "Audio Analysis (HeAR)",
+          history_search: "History Search",
+          image_explainability: "Explainability Heatmaps (MedSigLIP)",
+        };
+
+        // Handle pipeline events from SSE
+        const handlePipelineEvent = (event: PipelineEvent) => {
+          console.log("[Pipeline]", event.type, event);
+
+          switch (event.type) {
+            case "pipeline_start":
+              currentPhaseMsg = "Pipeline started — routing to specialists…";
+              updateProgressMessage();
+              break;
+
+            case "phase_start":
+              if (event.phase && phaseToStatus[event.phase]) {
+                setAgentStatus(phaseToStatus[event.phase] as any);
+              }
+              currentPhaseMsg = event.message || `Phase: ${event.phase}`;
+              updateProgressMessage();
+              break;
+
+            case "tool_start": {
+              const displayName = toolDisplayNames[event.tool || ""] || event.tool || "Unknown";
+              // Add or update this tool in running state
+              const existingIdx = toolResults.findIndex((t) => t.tool === displayName);
+              if (existingIdx === -1) {
+                toolResults.push({ tool: displayName, status: "running" });
+              } else {
+                toolResults[existingIdx] = { tool: displayName, status: "running" };
+              }
+              // Update status based on tool type
+              if (event.tool?.includes("image")) setAgentStatus("analyzing_image");
+              else if (event.tool?.includes("audio")) setAgentStatus("analyzing_audio");
+              else if (event.tool?.includes("history")) setAgentStatus("searching_history");
+              else setAgentStatus("analyzing_text");
+              updateProgressMessage();
+              break;
+            }
+
+            case "tool_complete": {
+              const displayName = toolDisplayNames[event.tool || ""] || event.tool || "Unknown";
+              const idx = toolResults.findIndex((t) => t.tool === displayName);
+              const durationMs = event.elapsed_s ? Math.round(event.elapsed_s * 1000) : undefined;
+              if (idx !== -1) {
+                toolResults[idx] = { tool: displayName, status: "complete", duration_ms: durationMs };
+              } else {
+                toolResults.push({ tool: displayName, status: "complete", duration_ms: durationMs });
+              }
+              updateProgressMessage();
+              break;
+            }
+
+            case "tool_error": {
+              const displayName = toolDisplayNames[event.tool || ""] || event.tool || "Unknown";
+              const idx = toolResults.findIndex((t) => t.tool === displayName);
+              const durationMs = event.elapsed_s ? Math.round(event.elapsed_s * 1000) : undefined;
+              if (idx !== -1) {
+                toolResults[idx] = { tool: displayName, status: "error", duration_ms: durationMs, summary: event.error };
+              } else {
+                toolResults.push({ tool: displayName, status: "error", duration_ms: durationMs, summary: event.error });
+              }
+              updateProgressMessage();
+              break;
+            }
+
+            case "phase_complete":
+              currentPhaseMsg = `${event.phase} complete (${event.elapsed_s?.toFixed(1)}s)`;
+              updateProgressMessage();
+              break;
+          }
+        };
+
+        // Try SSE streaming first, fall back to synchronous
+        let res = await apiClient.analyzeCaseStream(analysisRequest, handlePipelineEvent);
+        if (res.error && res.error.includes("Stream failed")) {
+          // Fallback to synchronous endpoint
+          console.warn("[Pipeline] SSE failed, falling back to sync");
+          res = await apiClient.analyzeCase(analysisRequest);
+        }
 
         if (res.error || !res.data) {
           throw new Error(res.error || "Analysis returned no data");
@@ -126,13 +249,15 @@ export default function AgentPage() {
         const data = res.data;
         setAgentStatus("complete");
 
+        // Remove the progress message — replace with final agent response
+        setMessages((prev: ChatMessage[]) => prev.filter((m: ChatMessage) => m.id !== progressMsgId));
+
         // Map the response to a structured AI report
         const mappedReport = mapApiResponseToAIReport(data);
 
         // Build rich citations from findings + specialist summaries
         const allCitations: import("@/lib/types").Citation[] = [];
 
-        // Findings → "finding" type citations
         data.findings.forEach((f, i) => {
           allCitations.push({
             id: `cit-finding-${i}`,
@@ -144,7 +269,6 @@ export default function AgentPage() {
           });
         });
 
-        // Specialist summaries → typed citations for sidebar tabs
         if (data.specialist_summaries) {
           Object.entries(data.specialist_summaries).forEach(([tool, summary], i) => {
             if (tool.includes("image") || tool === "image_analysis") {
@@ -183,20 +307,47 @@ export default function AgentPage() {
           });
         }
 
+        // Build pipeline timing summary from metrics
+        let metricsLine = "";
+        if (data.pipeline_metrics) {
+          const m = data.pipeline_metrics;
+          const toolLines = Object.entries(m.tool_timings)
+            .map(([t, s]) => `${toolDisplayNames[t] || t}: ${s.toFixed(1)}s`)
+            .join(", ");
+          metricsLine = `\n\n**Pipeline:** ${m.total_s.toFixed(1)}s total (tools: ${m.tools_s.toFixed(1)}s, judge: ${m.judge_s.toFixed(1)}s, report: ${m.report_s.toFixed(1)}s)${toolLines ? `\n**Tools:** ${toolLines}` : ""}`;
+        }
+
+        // Build final tool results from pipeline_metrics for the message
+        const finalToolResults: ToolResult[] = [];
+        if (data.pipeline_metrics) {
+          for (const [tool, elapsed] of Object.entries(data.pipeline_metrics.tool_timings)) {
+            const displayName = toolDisplayNames[tool] || tool;
+            const isFailed = data.pipeline_metrics.tools_failed.includes(tool);
+            finalToolResults.push({
+              tool: displayName,
+              status: isFailed ? "error" : "complete",
+              duration_ms: Math.round(elapsed * 1000),
+            });
+          }
+        }
+
         const agentMsg: ChatMessage = {
           id: `msg-${Date.now() + 1}`,
           role: "agent",
-          content: `**Diagnosis:** ${data.diagnosis} (${Math.round(data.confidence * 100)}% confidence)\n\n${data.evidence_summary}\n\n**Plan:**\n${data.plan.map((p) => `- ${p}`).join("\n")}\n\n[View Full Report →](/case/${data.report_id})`,
+          content: `**Diagnosis:** ${data.diagnosis} (${Math.round(data.confidence * 100)}% confidence)\n\n${data.evidence_summary}\n\n**Plan:**\n${data.plan.map((p) => `- ${p}`).join("\n")}${metricsLine}\n\n[View Full Report →](/case/${data.report_id})`,
           timestamp: new Date().toISOString(),
           report: mappedReport,
           citations: allCitations,
+          toolResults: finalToolResults,
         };
 
         setCitations(agentMsg.citations ?? []);
         addMessage(agentMsg);
-        toastSuccess("Analysis Complete", `Report ${res.report_id} generated with ${Math.round(res.confidence * 100)}% confidence.`);
+        toastSuccess("Analysis Complete", `Report ${data.report_id} generated with ${Math.round(data.confidence * 100)}% confidence.`);
         setTimeout(() => setAgentStatus("idle"), 2000);
       } catch (err) {
+        // Remove progress message on error
+        setMessages((prev: ChatMessage[]) => prev.filter((m: ChatMessage) => m.id !== progressMsgId));
         setAgentStatus("error");
         const errorMessage = err instanceof Error ? err.message : "Unknown error";
         toastError("Analysis Failed", errorMessage);
@@ -209,7 +360,7 @@ export default function AgentPage() {
         addMessage(errMsg);
       }
     },
-    [backendOnline, currentPatient, addMessage, setAgentStatus, setCitations, toastError, toastSuccess]
+    [backendOnline, currentPatient, addMessage, setMessages, setAgentStatus, setCitations, toastError, toastSuccess]
   );
 
   const handleReset = useCallback(() => {

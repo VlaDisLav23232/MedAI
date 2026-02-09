@@ -87,7 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(cases.router, prefix="/api/v1")
     app.include_router(patients.router, prefix="/api/v1")
-
+    app.include_router(files.router, prefix="/api/v1")
     app.include_router(transcription_route.router, prefix="/api/v1")
 
 

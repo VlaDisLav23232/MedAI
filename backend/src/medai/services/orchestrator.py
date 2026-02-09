@@ -39,6 +39,7 @@ from medai.domain.entities import (
 from medai.domain.interfaces import BaseJudge, BaseOrchestrator
 from medai.domain.schemas import CaseAnalysisRequest
 from medai.services.tool_registry import ToolRegistry
+from medai.services.pipeline_events import emit_pipeline_event
 
 logger = structlog.get_logger()
 
@@ -79,6 +80,13 @@ it generates spatial heatmaps showing which regions triggered each finding. Call
 6. NEVER call the same tool more than once per turn. One call per tool name per iteration.
 7. Call text_reasoning ONCE with all available context — do NOT split into multiple calls.
 8. After receiving all tool results, synthesize a BRIEF final diagnosis (under 300 words).
+
+CRITICAL — DISPATCH ALL TOOLS IN YOUR FIRST RESPONSE:
+Call ALL relevant tools in a SINGLE parallel batch in your FIRST turn. \
+Do NOT wait for image results before calling text_reasoning. \
+For example, if the case has images and clinical history, call image_analysis, \
+image_explainability, text_reasoning, and history_search ALL at once. \
+The tools run in parallel so this is faster. Never use multiple turns when one will do.
 
 HISTORY INTEGRATION RULES (CRITICAL):
 - When history_search returns prior records, you MUST consider them in your synthesis.
@@ -127,6 +135,12 @@ class ClaudeOrchestrator(BaseOrchestrator):
             has_audio=bool(request.audio_urls),
             phase="START",
         )
+        await emit_pipeline_event(
+            "pipeline_start",
+            patient_id=request.patient_id,
+            has_images=bool(request.image_urls),
+            has_audio=bool(request.audio_urls),
+        )
 
         # Build tool definitions for Claude
         tool_definitions = self._registry.get_claude_tool_definitions()
@@ -141,12 +155,48 @@ class ClaudeOrchestrator(BaseOrchestrator):
         # ── Phase 1-3: ROUTE → DISPATCH → COLLECT ──
         t0 = time.monotonic()
         logger.info("🔀 PHASE: ROUTE → DISPATCH → COLLECT", phase="TOOLS")
+        await emit_pipeline_event("phase_start", phase="routing", message="Routing case to specialist tools…")
 
         specialist_results = await self._run_tool_loop(
             system_prompt=system_prompt,
             user_content=user_content,
             tool_definitions=tool_definitions,
         )
+
+        # ── Phase 3b: AUTO-DISPATCH image_explainability if images present ──
+        # Claude sometimes skips image_explainability even when instructed.
+        # Guarantee heatmaps are always generated when images are provided.
+        siglip_name = ToolName.IMAGE_EXPLAINABILITY.value
+        if (
+            request.image_urls
+            and siglip_name not in specialist_results.results
+            and siglip_name not in specialist_results.errors
+        ):
+            logger.info(
+                "🔬 AUTO_DISPATCH_SIGLIP — Claude did not call image_explainability, forcing it",
+                phase="TOOLS",
+                image_count=len(request.image_urls),
+            )
+            t_sig = time.monotonic()
+            siglip_results = await self.dispatch_tools(
+                tool_names=[ToolName.IMAGE_EXPLAINABILITY],
+                tool_inputs={
+                    ToolName.IMAGE_EXPLAINABILITY: {
+                        "image_url": request.image_urls[0],
+                        "modality_hint": "xray",
+                    },
+                },
+            )
+            sig_elapsed = time.monotonic() - t_sig
+            specialist_results.results.update(siglip_results.results)
+            specialist_results.errors.update(siglip_results.errors)
+            self._tool_timings[siglip_name] = round(sig_elapsed, 2)
+            logger.info(
+                "✅ AUTO_SIGLIP_COMPLETE",
+                phase="TOOLS",
+                elapsed_s=round(sig_elapsed, 1),
+                success=siglip_name in siglip_results.results,
+            )
 
         tools_elapsed = time.monotonic() - t0
         logger.info(
@@ -156,10 +206,18 @@ class ClaudeOrchestrator(BaseOrchestrator):
             successful=list(specialist_results.results.keys()),
             errors=list(specialist_results.errors.keys()),
         )
+        await emit_pipeline_event(
+            "phase_complete",
+            phase="tools",
+            elapsed_s=round(tools_elapsed, 1),
+            tools_called=list(specialist_results.results.keys()),
+            tools_failed=list(specialist_results.errors.keys()),
+        )
 
         # ── Phase 4: JUDGE ──
         t0 = time.monotonic()
         logger.info("⚖️  PHASE: JUDGE", phase="JUDGE")
+        await emit_pipeline_event("phase_start", phase="judging", message="Judge evaluating tool consensus…")
 
         if not self._settings.judge_enabled:
             logger.info("⏭️  JUDGE_SKIPPED (judge_enabled=false)", phase="JUDGE")
@@ -230,10 +288,18 @@ class ClaudeOrchestrator(BaseOrchestrator):
             confidence=judgment.confidence,
             requery_cycles=cycle,
         )
+        await emit_pipeline_event(
+            "phase_complete",
+            phase="judging",
+            elapsed_s=round(judge_elapsed, 1),
+            verdict=judgment.verdict.value,
+            confidence=judgment.confidence,
+        )
 
         # ── Phase 5: REPORT ──
         t0 = time.monotonic()
         logger.info("📝 PHASE: REPORT", phase="REPORT")
+        await emit_pipeline_event("phase_start", phase="generating_report", message="Generating final report…")
 
         report = await self._generate_report(request, specialist_results, judgment)
 
@@ -420,6 +486,7 @@ class ClaudeOrchestrator(BaseOrchestrator):
                 tool=tool_name_str,
                 input_keys=list(tool_input.keys()) if isinstance(tool_input, dict) else [],
             )
+            await emit_pipeline_event("tool_start", tool=tool_name_str)
 
             try:
                 tool_name = ToolName(tool_name_str)
@@ -434,6 +501,9 @@ class ClaudeOrchestrator(BaseOrchestrator):
                     "✅ TOOL_COMPLETE",
                     tool=tool_name_str,
                     elapsed_s=round(elapsed, 1),
+                )
+                await emit_pipeline_event(
+                    "tool_complete", tool=tool_name_str, elapsed_s=round(elapsed, 1),
                 )
 
                 content = output.model_dump_json() if hasattr(output, "model_dump_json") else json.dumps(output)
@@ -455,6 +525,9 @@ class ClaudeOrchestrator(BaseOrchestrator):
                     tool=tool_name_str,
                     elapsed_s=round(elapsed, 1),
                     error=str(e),
+                )
+                await emit_pipeline_event(
+                    "tool_error", tool=tool_name_str, elapsed_s=round(elapsed, 1), error=str(e),
                 )
                 results.errors[tool_name_str] = str(e)
                 return {

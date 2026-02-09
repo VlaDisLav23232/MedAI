@@ -193,7 +193,7 @@ export default function CasePage({
                 {report.evidence_summary}
               </p>
               <div className="flex items-center gap-2 mt-2">
-                {report.judge_verdict.status === "consensus" ? (
+                {report.judge_verdict?.status === "consensus" ? (
                   <>
                     <CheckCircle2 size={14} className="text-accent-emerald" />
                     <span className="text-xs font-medium text-accent-emerald">

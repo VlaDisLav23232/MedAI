@@ -107,6 +107,93 @@ def _parse_inference_metadata(data: dict[str, Any]) -> InferenceMetadata | None:
         return None
 
 
+def _clean_assessment_text(
+    assessment: str,
+    raw_output: str = "",
+    reasoning_chain: list[dict[str, Any]] | None = None,
+) -> str:
+    """Extract clean natural-language assessment from MedGemma output.
+
+    Handles several failure modes:
+    1. Assessment is valid clean text → return as-is
+    2. Assessment looks like raw JSON → try to parse and extract the
+       actual "assessment" field from within
+    3. Assessment is truncated JSON (max_tokens hit) → extract readable
+       text from reasoning steps or raw output
+    4. Assessment wrapped in markdown code fences → strip them
+    """
+    import json as _json
+
+    if not assessment or assessment == "No assessment available":
+        # Try raw_output if assessment was empty
+        if raw_output:
+            assessment = raw_output
+        else:
+            return "No assessment available"
+
+    # Strip markdown code fences: ```json ... ``` or ``` ... ```
+    cleaned = assessment.strip()
+    if cleaned.startswith("```"):
+        # Remove first line (```json or ```)
+        lines = cleaned.split("\n", 1)
+        cleaned = lines[1] if len(lines) > 1 else cleaned
+        if "```" in cleaned:
+            cleaned = cleaned.rsplit("```", 1)[0]
+        cleaned = cleaned.strip()
+
+    # Check if it looks like JSON (starts with { or [)
+    if cleaned.startswith("{") or cleaned.startswith("["):
+        # Try to parse as valid JSON first
+        try:
+            parsed = _json.loads(cleaned)
+            if isinstance(parsed, dict):
+                # Extract the assessment field from the parsed JSON
+                inner_assessment = parsed.get("assessment", "")
+                if inner_assessment and isinstance(inner_assessment, str):
+                    return inner_assessment.strip()
+                # If no assessment field, try to build from reasoning_chain
+                inner_chain = parsed.get("reasoning_chain", [])
+                if inner_chain:
+                    thoughts = [
+                        step.get("thought", "") for step in inner_chain
+                        if isinstance(step, dict)
+                    ]
+                    return " ".join(t for t in thoughts if t).strip() or cleaned
+        except _json.JSONDecodeError:
+            # Truncated JSON — try partial extraction
+            pass
+
+        # Try regex extraction of "assessment": "..." from truncated JSON
+        import re
+        match = re.search(r'"assessment"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)', cleaned)
+        if match:
+            extracted = match.group(1)
+            # Unescape JSON string escapes
+            try:
+                extracted = _json.loads(f'"{extracted}"')
+            except (ValueError, _json.JSONDecodeError):
+                pass
+            if extracted and len(extracted) > 20:
+                return extracted.strip()
+
+        # Fall back: extract readable text from reasoning chain
+        if reasoning_chain:
+            thoughts = [
+                step.get("thought", "") for step in reasoning_chain
+                if isinstance(step, dict) and step.get("thought")
+            ]
+            if thoughts:
+                return " ".join(thoughts).strip()
+
+        # Last resort: strip JSON punctuation and return readable portion
+        readable = re.sub(r'[{}\[\]"\\]', ' ', cleaned)
+        readable = re.sub(r'\s+', ' ', readable).strip()
+        if len(readable) > 50:
+            return readable[:2000]
+
+    return cleaned
+
+
 # ── Retry / timeout defaults ──────────────────────────────
 
 DEFAULT_TIMEOUT = 300.0  # seconds (Modal cold starts can take 2-5 min)
@@ -260,15 +347,22 @@ class _HttpToolBase(BaseTool):
                 )
             except httpx.HTTPStatusError as e:
                 last_error = e
+                # Log response body for debugging (Modal returns helpful error messages)
+                body_preview = ""
+                try:
+                    body_preview = e.response.text[:300]
+                except Exception:
+                    pass
                 logger.warning(
                     "tool_http_error",
                     tool=self.name.value,
                     attempt=attempt + 1,
                     status=e.response.status_code,
                     url=url,
+                    body=body_preview,
                 )
-                # Don't retry 4xx client errors
-                if 400 <= e.response.status_code < 500:
+                # Don't retry 4xx client errors (except 408 Request Timeout and 429 Rate Limit)
+                if 400 <= e.response.status_code < 500 and e.response.status_code not in (408, 429):
                     break
             except Exception as e:
                 last_error = e
@@ -437,7 +531,13 @@ class HttpTextReasoningTool(_HttpToolBase):
         }
 
     def _parse_response(self, data: dict[str, Any]) -> TextReasoningOutput:
-        """Parse MedGemma text reasoning response."""
+        """Parse MedGemma text reasoning response.
+
+        Handles multiple failure modes from the Modal endpoint:
+        - Properly parsed JSON with clean assessment text
+        - JSON parsing failed on Modal → raw_output present, assessment is raw text
+        - Truncated JSON from model hitting max_new_tokens limit
+        """
         from datetime import datetime
 
         inference = _parse_inference_metadata(data)
@@ -475,9 +575,18 @@ class HttpTextReasoningTool(_HttpToolBase):
         confidence = float(data.get("confidence", 0.5))
         reasoning_chain = data.get("reasoning_chain", [])
 
+        # ── Robust assessment extraction ──────────────────
+        # MedGemma 27B sometimes returns the whole JSON response as
+        # `assessment` when the Modal endpoint can't parse JSON (e.g.
+        # model output truncated by max_new_tokens).  Detect and fix.
+        assessment = data.get("assessment", "No assessment available")
+        raw_output = data.get("raw_output", "")
+
+        assessment = _clean_assessment_text(assessment, raw_output, reasoning_chain)
+
         return TextReasoningOutput(
             reasoning_chain=reasoning_chain,
-            assessment=data.get("assessment", "No assessment available"),
+            assessment=assessment,
             confidence=confidence,
             evidence_citations=evidence,
             plan_suggestions=data.get("plan_suggestions", []),
