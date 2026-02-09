@@ -1,0 +1,199 @@
+{
+  "id": "RPT-SEED0004",
+  "encounter_id": "ENC-SEED0004",
+  "patient_id": "PT-DEMO0004",
+  "diagnosis": "Post-STEMI recovery with improving LV function (LVEF 48%) \u2014 on optimal medical therapy",
+  "confidence": 0.91,
+  "confidence_method": "judge_assessment",
+  "evidence_summary": "66-year-old male, 6 weeks post-anterior STEMI managed with primary PCI (LAD drug-eluting stent). Follow-up echocardiogram shows LVEF improvement from 40% to 48% \u2014 anterior wall hypokinesis improving. No LV thrombus. Mild stable mitral regurgitation. BNP decreased from 340 to 85 pg/mL. LDL at target on high-dose statin (72 mg/dL). Patient completing cardiac rehab phase 1, walking 30 minutes daily without angina. Adherent to DAPT, beta-blocker, ACEi, and statin.",
+  "timeline_impact": "Significant clinical improvement since STEMI presentation in Sep 2025. Acute phase: Troponin peak 8.2 ng/mL, LVEF 40%, BNP 340. Required emergency PCI with LAD stent. 6-week follow-up: LVEF 48% (+8%), BNP 85 (-75%), LDL 72 (at target). Functional improvement \u2014 can walk 30 min without symptoms vs. prior exertional angina. Prognosis improving \u2014 continue current regimen, advance cardiac rehab to phase 2.",
+  "plan": [
+    "Continue DAPT: Aspirin 81mg + Clopidogrel 75mg (minimum 12 months post-DES)",
+    "Continue Atorvastatin 80mg QD \u2014 LDL at target (72 mg/dL)",
+    "Continue Metoprolol 50mg BID \u2014 HR well-controlled at 62 bpm",
+    "Continue Ramipril 5mg QD \u2014 cardioprotective + BP control",
+    "Advance to cardiac rehabilitation phase 2 \u2014 increase exercise intensity",
+    "Follow-up echocardiogram in 3 months to reassess LV function trajectory",
+    "Review DAPT duration at 12-month mark \u2014 consider de-escalation to aspirin monotherapy",
+    "Check lipid panel in 6 weeks to ensure LDL remains at target",
+    "Repeat BNP in 3 months \u2014 should continue downward trend"
+  ],
+  "findings": [
+    {
+      "finding": "Improving LV systolic function (LVEF 40%\u219248%)",
+      "confidence": 0.93,
+      "explanation": "Echocardiogram shows LVEF improvement of 8% over 6 weeks. Anterior wall hypokinesis is improving, suggesting viable (not infarcted) myocardium is recovering.",
+      "severity": "moderate",
+      "region_bbox": null,
+      "metadata": {
+        "modality": "ultrasound"
+      }
+    },
+    {
+      "finding": "Declining BNP trend (340\u219285 pg/mL)",
+      "confidence": 0.94,
+      "explanation": "75% reduction in BNP over 6 weeks indicates resolving myocardial stress and improving cardiac function.",
+      "severity": "mild",
+      "region_bbox": null,
+      "metadata": {
+        "source": "labs"
+      }
+    },
+    {
+      "finding": "LDL at guideline target (72 mg/dL)",
+      "confidence": 0.96,
+      "explanation": "LDL <70 mg/dL is the target for very high-risk patients post-ACS. Current value of 72 is borderline \u2014 within acceptable range on high-dose statin.",
+      "severity": "none",
+      "region_bbox": null,
+      "metadata": {
+        "source": "labs"
+      }
+    },
+    {
+      "finding": "Functional recovery \u2014 completing cardiac rehab",
+      "confidence": 0.88,
+      "explanation": "Patient can walk 30 minutes without angina or dyspnea. Completing cardiac rehab phase 1. Ready for phase 2 with intensified exercise.",
+      "severity": "none",
+      "region_bbox": null,
+      "metadata": {
+        "source": "clinical"
+      }
+    }
+  ],
+  "reasoning_trace": [
+    {
+      "step": 1,
+      "thought": "Post-STEMI patient at 6-week follow-up. Need to assess myocardial recovery, medication efficacy, and functional status."
+    },
+    {
+      "step": 2,
+      "thought": "Echocardiogram shows LVEF improving (40\u219248%). This is a favorable trajectory \u2014 suggests myocardial stunning rather than completed infarction in the border zone."
+    },
+    {
+      "step": 3,
+      "thought": "BNP declining dramatically (340\u219285) is concordant with improving LV function on echo."
+    },
+    {
+      "step": 4,
+      "thought": "LDL at 72 on atorvastatin 80mg \u2014 very close to <70 target. Could consider adding ezetimibe if strict target <70 is desired."
+    },
+    {
+      "step": 5,
+      "thought": "Patient functionally improving, adherent to all medications. No signs of heart failure. Positive prognosis."
+    },
+    {
+      "step": 6,
+      "thought": "Continue all current medications. Advance cardiac rehab. Re-image in 3 months."
+    }
+  ],
+  "specialist_outputs": {
+    "text_reasoning": {
+      "tool": "text_reasoning",
+      "reasoning_chain": [
+        {
+          "step": 1,
+          "thought": "Post-STEMI 6-week assessment: echocardiographic recovery is the primary endpoint"
+        },
+        {
+          "step": 2,
+          "thought": "LVEF 40\u219248%, BNP 340\u219285 \u2014 concordant improvement in cardiac function and biomarkers"
+        },
+        {
+          "step": 3,
+          "thought": "All medications optimally dosed \u2014 continue current regimen"
+        }
+      ],
+      "assessment": "Favorable post-STEMI recovery trajectory. LVEF improving, biomarkers declining, functional capacity increasing. Current optimal medical therapy should be continued. Advance cardiac rehabilitation.",
+      "confidence": 0.91,
+      "evidence_citations": [
+        {
+          "source": "Echo Sep 2025",
+          "source_type": "imaging",
+          "relevant_excerpt": "LVEF 40%, anterior hypokinesis \u2014 acute post-STEMI dysfunction.",
+          "date": "2025-09-22T14:00:00"
+        },
+        {
+          "source": "Echo Nov 2025",
+          "source_type": "imaging",
+          "relevant_excerpt": "LVEF 48%, improving anterior wall motion \u2014 recovery trajectory.",
+          "date": "2025-11-04T10:00:00"
+        },
+        {
+          "source": "Labs Nov 2025",
+          "source_type": "lab",
+          "relevant_excerpt": "LDL 72, BNP 85 \u2014 both at/near target, dramatic improvement from acute phase.",
+          "date": "2025-11-04T10:30:00"
+        }
+      ],
+      "plan_suggestions": [
+        "Advance cardiac rehab phase 2",
+        "Continue all current medications",
+        "Repeat echo in 3 months"
+      ],
+      "contraindication_flags": []
+    },
+    "history_search": {
+      "tool": "history_search",
+      "patient_id": "PT-DEMO0004",
+      "relevant_records": [
+        {
+          "date": "2025-09-20T06:00:00",
+          "record_type": "encounter",
+          "summary": "Emergency STEMI presentation \u2014 crushing chest pain, ST elevation V2-V5",
+          "similarity_score": 0.93,
+          "clinical_relevance": "Index event \u2014 anterior STEMI."
+        },
+        {
+          "date": "2025-09-20T09:00:00",
+          "record_type": "procedure",
+          "summary": "Primary PCI \u2014 LAD DES implanted, TIMI 3 flow restored",
+          "similarity_score": 0.91,
+          "clinical_relevance": "Successful revascularization \u2014 key prognostic factor for LV recovery."
+        },
+        {
+          "date": "2025-09-22T14:00:00",
+          "record_type": "imaging",
+          "summary": "Echo: LVEF 40%, anterior hypokinesis",
+          "similarity_score": 0.95,
+          "clinical_relevance": "Baseline post-STEMI LV function \u2014 comparison point for recovery assessment."
+        },
+        {
+          "date": "2025-09-23T10:00:00",
+          "record_type": "lab",
+          "summary": "Peak troponin 8.2, BNP 340",
+          "similarity_score": 0.88,
+          "clinical_relevance": "Peak biomarkers \u2014 moderate-sized infarction."
+        }
+      ],
+      "timeline_context": "Anterior STEMI treated with primary PCI 6 weeks ago. Successfully revascularized. Now in recovery phase with improving LV function, declining biomarkers, and improving functional status."
+    }
+  },
+  "judge_verdict": {
+    "verdict": "consensus",
+    "confidence": 0.91,
+    "reasoning": "Text reasoning and history search agree on favorable post-STEMI recovery. Echo and biomarker trends are concordant. All specialist outputs support continuing current therapy with cardiac rehab advancement.",
+    "contradictions": [],
+    "low_confidence_items": [],
+    "missing_context": [],
+    "requery_tools": []
+  },
+  "approval_status": "pending",
+  "created_at": "2025-11-04T14:30:00",
+  "doctor_notes": null,
+  "pipeline_metrics": {
+    "tools_s": 13.5,
+    "judge_s": 2.7,
+    "report_s": 0.9,
+    "total_s": 17.1,
+    "tool_timings": {
+      "text_reasoning": 10.4,
+      "history_search": 3.1
+    },
+    "requery_cycles": 0,
+    "tools_called": [
+      "text_reasoning",
+      "history_search"
+    ],
+    "tools_failed": []
+  }
+}

@@ -91,7 +91,8 @@ class InMemoryReportRepository(BaseReportRepository):
         return report
 
     async def update_approval(
-        self, report_id: str, status: str, doctor_notes: str | None = None
+        self, report_id: str, status: str, doctor_notes: str | None = None,
+        edits: dict[str, Any] | None = None,
     ) -> FinalReport | None:
         report = self._store.get(report_id)
         if report is None:
@@ -100,6 +101,12 @@ class InMemoryReportRepository(BaseReportRepository):
         report.approval_status = ApprovalStatus(status)
         if doctor_notes is not None:
             report.doctor_notes = doctor_notes
+        # Apply edits to mutable report fields
+        if edits:
+            editable_fields = {"diagnosis", "evidence_summary", "plan", "timeline_impact"}
+            for field, value in edits.items():
+                if field in editable_fields and hasattr(report, field):
+                    setattr(report, field, value)
         return report
 
     async def list_for_patient(self, patient_id: str) -> list[FinalReport]:
