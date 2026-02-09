@@ -63,6 +63,10 @@ class CaseAnalysisResponse(BaseModel):
     # Explainability artifacts
     heatmap_urls: list[str] = Field(default_factory=list)
     specialist_summaries: dict[str, str] = Field(default_factory=dict)
+    specialist_outputs: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Rich structured tool outputs (condition_scores, heatmaps, reasoning chains, etc.)",
+    )
     # Performance / provenance
     pipeline_metrics: PipelineMetrics | None = Field(
         default=None,

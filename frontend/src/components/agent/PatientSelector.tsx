@@ -152,7 +152,7 @@ export function PatientSelector({ preselectedId }: PatientSelectorProps) {
                       {p.name}
                     </span>
                     <span className="text-[10px] text-gray-400 block">
-                      {p.medical_record_number} · {p.gender} · DOB {p.dob}
+                      {p.medical_record_number} · {p.gender} · DOB {p.date_of_birth}
                     </span>
                   </div>
                   {currentPatient?.id === p.id && (

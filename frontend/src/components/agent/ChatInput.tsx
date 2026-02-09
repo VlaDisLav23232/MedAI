@@ -162,11 +162,11 @@ export function ChatInput({ onSend, disabled, className, value: externalValue, o
           const chunkSize = 8192;
           let binary = "";
           for (let i = 0; i < bytes.length; i += chunkSize) {
-            binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+            binary += String.fromCharCode(...Array.from(bytes.subarray(i, i + chunkSize)));
           }
           const base64 = btoa(binary);
 
-          const result = await apiClient.transcribe(base64);
+          const result = await (apiClient as unknown as { transcribe: (b64: string) => Promise<{ error?: string; transcription?: string }> }).transcribe(base64);
           if (result.error) {
             console.error("Transcription error:", result.error);
           } else if (result.transcription) {

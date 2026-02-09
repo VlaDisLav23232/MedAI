@@ -64,7 +64,7 @@ export default function AdminPage() {
   useEffect(() => {
     apiClient
       .checkHealth()
-      .then(setHealth)
+      .then((resp) => setHealth("data" in resp ? (resp.data ?? null) : resp as ApiHealthResponse))
       .catch((err) =>
         setHealthError(err instanceof Error ? err.message : "Unreachable")
       );

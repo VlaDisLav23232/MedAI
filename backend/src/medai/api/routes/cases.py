@@ -36,6 +36,48 @@ _logger = structlog.get_logger()
 router = APIRouter(prefix="/cases", tags=["cases"])
 
 
+# ── Shared helpers ─────────────────────────────────────────────
+
+def _sanitize_specialist_outputs(
+    outputs: dict,
+    artifact_store: ArtifactStorage,
+    report_id: str,
+) -> dict:
+    """Create a frontend-safe copy of specialist_outputs.
+
+    Replaces base64 data URIs with /storage/ URLs and strips embeddings.
+    """
+    import copy
+
+    sanitized: dict = {}
+    for tool_name, output in outputs.items():
+        if not isinstance(output, dict):
+            sanitized[tool_name] = output
+            continue
+        o = copy.deepcopy(output)
+        # Remove large embedding arrays
+        o.pop("embedding", None)
+        # Replace attention_heatmap_url base64 → saved storage URL
+        raw_heatmap = o.get("attention_heatmap_url") or ""
+        if raw_heatmap.startswith("data:image/"):
+            saved = artifact_store.save_data_uri(
+                raw_heatmap, prefix=f"{tool_name}_top", report_id=report_id,
+            )
+            o["attention_heatmap_url"] = f"/storage/{saved}" if saved else None
+        # Replace per-condition heatmap_data_uri base64 → saved storage URL
+        for cs in o.get("condition_scores", []):
+            if isinstance(cs, dict):
+                uri = cs.get("heatmap_data_uri") or ""
+                if uri.startswith("data:image/"):
+                    label_slug = cs.get("label", "unknown").replace(" ", "_")[:30]
+                    saved = artifact_store.save_data_uri(
+                        uri, prefix=f"heatmap_{label_slug}", report_id=report_id,
+                    )
+                    cs["heatmap_data_uri"] = f"/storage/{saved}" if saved else None
+        sanitized[tool_name] = o
+    return sanitized
+
+
 @router.post("/analyze", response_model=CaseAnalysisResponse)
 async def analyze_case(
     request: CaseAnalysisRequest,
@@ -149,6 +191,11 @@ async def analyze_case(
         report_id=report.id,
     )
 
+    # Sanitize specialist outputs for frontend (strip base64, save to disk)
+    sanitized_outputs = _sanitize_specialist_outputs(
+        report.specialist_outputs, artifact_store, report.id,
+    )
+
     return CaseAnalysisResponse(
         report_id=report.id,
         encounter_id=report.encounter_id,
@@ -166,6 +213,7 @@ async def analyze_case(
         created_at=report.created_at,
         heatmap_urls=heatmap_urls,
         specialist_summaries=specialist_summaries,
+        specialist_outputs=sanitized_outputs,
         pipeline_metrics=report.pipeline_metrics,
     )
 
@@ -226,6 +274,11 @@ def _build_response(report, artifact_store, current_user) -> CaseAnalysisRespons
         report_id=report.id,
     )
 
+    # Sanitize specialist outputs for frontend
+    sanitized_outputs = _sanitize_specialist_outputs(
+        report.specialist_outputs, artifact_store, report.id,
+    )
+
     return CaseAnalysisResponse(
         report_id=report.id,
         encounter_id=report.encounter_id,
@@ -243,6 +296,7 @@ def _build_response(report, artifact_store, current_user) -> CaseAnalysisRespons
         created_at=report.created_at,
         heatmap_urls=heatmap_urls,
         specialist_summaries=specialist_summaries,
+        specialist_outputs=sanitized_outputs,
         pipeline_metrics=report.pipeline_metrics,
     )
 
@@ -359,6 +413,9 @@ async def get_report(
     if report is None:
         raise HTTPException(status_code=404, detail=f"Report {report_id} not found")
 
+    settings = get_settings()
+    artifact_store = ArtifactStorage(settings.storage_local_path)
+
     # Re-extract specialist summaries
     heatmap_urls = []
     specialist_summaries = {}
@@ -385,6 +442,11 @@ async def get_report(
                     lines.append(f"  {label}: {prob:.1%}")
                 specialist_summaries[tool_name] = "\n".join(lines)
 
+    # Sanitize specialist outputs for frontend (strip base64, save to disk)
+    sanitized_outputs = _sanitize_specialist_outputs(
+        report.specialist_outputs, artifact_store, report.id,
+    )
+
     return CaseAnalysisResponse(
         report_id=report.id,
         encounter_id=report.encounter_id,
@@ -402,6 +464,7 @@ async def get_report(
         created_at=report.created_at,
         heatmap_urls=heatmap_urls,
         specialist_summaries=specialist_summaries,
+        specialist_outputs=sanitized_outputs,
         pipeline_metrics=report.pipeline_metrics,
     )
 

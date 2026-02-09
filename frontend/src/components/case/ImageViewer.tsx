@@ -1,237 +1,246 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Eye, EyeOff, ZoomIn, ZoomOut, RotateCcw, Crosshair } from "lucide-react";
+import { ExplainabilityTooltip } from "@/components/shared/ExplainabilityTooltip";
+import type { ConditionScore } from "@/lib/types";
+import {
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  RotateCw,
+  Maximize2,
+  Layers,
+  Move,
+} from "lucide-react";
 
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
-
-interface FindingRegion {
-  finding: string;
-  region_bbox?: [number, number, number, number]; // [x1, y1, x2, y2] in px relative to 512×512 grid
-  confidence: number;
-}
+/* ──────────────────────────────────────────────────────────────
+ *  MedicalImageViewer — ImageViewer rewrite
+ *
+ *  Features:
+ *  • Displays the actual medical image (base64 or URL)
+ *  • Overlays per-condition GradCAM heatmaps with opacity control
+ *  • Pan (mouse drag), zoom (wheel + buttons), rotate (90° steps)
+ *  • Condition selector synced with ConditionScoresChart
+ * ────────────────────────────────────────────────────────────── */
 
 interface ImageViewerProps {
+  /** Primary image URL (attention_heatmap_url or first heatmap) */
   imageUrl?: string;
-  heatmapUrl?: string;
-  findings?: FindingRegion[];
+  /** Condition scores with per-condition heatmap URLs */
+  conditionScores?: ConditionScore[];
+  /** Currently selected condition label */
+  selectedLabel?: string;
+  /** Callback when user selects a label from the viewer */
+  onSelectLabel?: (label: string) => void;
   className?: string;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Heatmap color palette                                              */
-/* ------------------------------------------------------------------ */
-
-/** Jet-like colormap for a 0-1 intensity value → [r, g, b, a]. */
-function heatColor(t: number): [number, number, number, number] {
-  // 0-0.25 → blue→cyan, 0.25-0.5 → cyan→green, 0.5-0.75 → green→yellow, 0.75-1 → yellow→red
-  const clamped = Math.max(0, Math.min(1, t));
-  let r = 0,
-    g = 0,
-    b = 0;
-  if (clamped < 0.25) {
-    b = 1;
-    g = clamped / 0.25;
-  } else if (clamped < 0.5) {
-    g = 1;
-    b = 1 - (clamped - 0.25) / 0.25;
-  } else if (clamped < 0.75) {
-    g = 1;
-    r = (clamped - 0.5) / 0.25;
-  } else {
-    r = 1;
-    g = 1 - (clamped - 0.75) / 0.25;
-  }
-  const alpha = clamped * 0.55; // hotter → more opaque
-  return [r * 255, g * 255, b * 255, alpha * 255];
-}
-
-/* ------------------------------------------------------------------ */
-/*  Component                                                          */
-/* ------------------------------------------------------------------ */
-
 export function ImageViewer({
   imageUrl,
-  heatmapUrl,
-  findings,
+  conditionScores,
+  selectedLabel,
+  onSelectLabel,
   className,
 }: ImageViewerProps) {
-  const [showHeatmap, setShowHeatmap] = useState(false);
-  const [showRegions, setShowRegions] = useState(true);
+  /* ── State ──────────────────────────────────────────────── */
   const [zoom, setZoom] = useState(1);
-  const [heatmapOpacity, setHeatmapOpacity] = useState(0.6);
+  const [rotation, setRotation] = useState(0);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [showOverlay, setShowOverlay] = useState(true);
+  const [overlayOpacity, setOverlayOpacity] = useState(0.55);
+  const [imgLoaded, setImgLoaded] = useState(false);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Fixed logical size of the canvas; matches the placeholder image
-  const SIZE = 400;
-  // Findings bbox coordinates are relative to a 512×512 grid
-  const BBOX_GRID = 512;
+  /* ── Derived ────────────────────────────────────────────── */
+  const sorted = conditionScores
+    ? [...conditionScores].sort((a, b) => b.probability - a.probability)
+    : [];
+  const activeLabel = selectedLabel || sorted[0]?.label;
+  const activeScore = sorted.find((s) => s.label === activeLabel);
+  const heatmapUrl = activeScore?.heatmap_data_uri;
 
-  /* ── Draw procedural heatmap from finding bounding boxes ────── */
-  const drawProceduralHeatmap = useCallback(
-    (ctx: CanvasRenderingContext2D, w: number, h: number) => {
-      if (!findings || findings.length === 0) return;
+  // Base image: the top attention heatmap or first available image
+  const baseImageUrl =
+    imageUrl || sorted.find((s) => s.heatmap_data_uri)?.heatmap_data_uri;
 
-      // Build intensity field
-      const intensityBuf = new Float32Array(w * h);
-
-      for (const f of findings) {
-        if (!f.region_bbox) continue;
-        const [x1Raw, y1Raw, x2Raw, y2Raw] = f.region_bbox;
-        // Normalise to canvas pixel space
-        const cx = (((x1Raw + x2Raw) / 2) / BBOX_GRID) * w;
-        const cy = (((y1Raw + y2Raw) / 2) / BBOX_GRID) * h;
-        const radiusX = (((x2Raw - x1Raw) / 2) / BBOX_GRID) * w * 1.3; // extend slightly
-        const radiusY = (((y2Raw - y1Raw) / 2) / BBOX_GRID) * h * 1.3;
-        const peakIntensity = f.confidence;
-
-        // Gaussian-ish blob
-        const rMax = Math.max(radiusX, radiusY) * 1.8;
-        const x0 = Math.max(0, Math.floor(cx - rMax));
-        const y0 = Math.max(0, Math.floor(cy - rMax));
-        const x1 = Math.min(w, Math.ceil(cx + rMax));
-        const y1 = Math.min(h, Math.ceil(cy + rMax));
-
-        for (let py = y0; py < y1; py++) {
-          for (let px = x0; px < x1; px++) {
-            const dx = (px - cx) / radiusX;
-            const dy = (py - cy) / radiusY;
-            const d2 = dx * dx + dy * dy;
-            if (d2 > 4) continue; // beyond 2-sigma
-            const val = peakIntensity * Math.exp(-d2 / 2);
-            const idx = py * w + px;
-            intensityBuf[idx] = Math.min(1, intensityBuf[idx] + val);
-          }
-        }
-      }
-
-      // Convert intensity to RGBA image
-      const imgData = ctx.createImageData(w, h);
-      for (let i = 0; i < w * h; i++) {
-        const [r, g, b, a] = heatColor(intensityBuf[i]);
-        imgData.data[i * 4 + 0] = r;
-        imgData.data[i * 4 + 1] = g;
-        imgData.data[i * 4 + 2] = b;
-        imgData.data[i * 4 + 3] = a;
-      }
-      ctx.putImageData(imgData, 0, 0);
+  /* ── Pan handlers ───────────────────────────────────────── */
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     },
-    [findings]
+    [pan],
   );
 
-  /* ── Draw heatmap from URL (downloaded image overlay) ──────── */
-  const drawImageHeatmap = useCallback(
-    (ctx: CanvasRenderingContext2D, w: number, h: number) => {
-      if (!heatmapUrl) return;
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        ctx.clearRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-      };
-      img.src = heatmapUrl;
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isPanning) return;
+      setPan({
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y,
+      });
     },
-    [heatmapUrl]
+    [isPanning, panStart],
   );
 
-  /* ── Main render loop ──────────────────────────────────────── */
+  const handleMouseUp = useCallback(() => setIsPanning(false), []);
+
+  /* ── Zoom with wheel ────────────────────────────────────── */
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    setZoom((z) => {
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      return Math.max(0.25, Math.min(5, z + delta));
+    });
+  }, []);
+
+  /* ── Reset view ─────────────────────────────────────────── */
+  const resetView = () => {
+    setZoom(1);
+    setRotation(0);
+    setPan({ x: 0, y: 0 });
+  };
+
+  /* ── Touch support for mobile ───────────────────────────── */
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      setIsPanning(true);
+      setPanStart({ x: t.clientX - pan.x, y: t.clientY - pan.y });
+    },
+    [pan],
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (!isPanning || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      setPan({
+        x: t.clientX - panStart.x,
+        y: t.clientY - panStart.y,
+      });
+    },
+    [isPanning, panStart],
+  );
+
+  const handleTouchEnd = useCallback(() => setIsPanning(false), []);
+
+  /* ── Keyboard zoom/rotate ───────────────────────────────── */
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !showHeatmap) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "+" || e.key === "=") setZoom((z) => Math.min(z + 0.25, 5));
+      else if (e.key === "-" || e.key === "_") setZoom((z) => Math.max(z - 0.25, 0.25));
+      else if (e.key === "r") setRotation((r) => r + 90);
+      else if (e.key === "0") resetView();
+    };
+    el.addEventListener("keydown", handler);
+    return () => el.removeEventListener("keydown", handler);
+  }, []);
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const w = canvas.width;
-    const h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
-
-    if (heatmapUrl) {
-      drawImageHeatmap(ctx, w, h);
-    } else {
-      drawProceduralHeatmap(ctx, w, h);
-    }
-  }, [showHeatmap, heatmapUrl, drawImageHeatmap, drawProceduralHeatmap]);
+  /* ── Render ─────────────────────────────────────────────── */
+  const transformStyle = {
+    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg)`,
+    transition: isPanning ? "none" : "transform 0.2s ease-out",
+  };
 
   return (
     <div
       className={cn(
         "flex flex-col rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-black",
-        className
+        className,
       )}
     >
       {/* ── Toolbar ──────────────────────────────────── */}
       <div className="flex items-center justify-between px-3 py-2 bg-gray-900 border-b border-gray-800">
-        <span className="text-xs font-medium text-gray-400">
-          Medical Image Viewer
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-gray-400">
+            Medical Image Viewer
+          </span>
+          <ExplainabilityTooltip
+            content="GradCAM attention visualization"
+            detail="Heatmaps show where the MedSigLIP vision model focuses when evaluating each condition. Warmer colors = higher attention."
+            size={11}
+            position="bottom"
+          />
+        </div>
         <div className="flex items-center gap-1">
-          {/* Heatmap toggle */}
-          <button
-            onClick={() => setShowHeatmap((v) => !v)}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition",
-              showHeatmap
-                ? "bg-accent-rose/20 text-accent-rose"
-                : "bg-gray-800 text-gray-400 hover:text-gray-200"
-            )}
-            aria-pressed={showHeatmap}
-            aria-label="Toggle heatmap overlay"
-          >
-            {showHeatmap ? <EyeOff size={12} /> : <Eye size={12} />}
-            Heatmap
-          </button>
-
-          {/* Region boxes toggle */}
-          <button
-            onClick={() => setShowRegions((v) => !v)}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition",
-              showRegions
-                ? "bg-accent-cyan/20 text-accent-cyan"
-                : "bg-gray-800 text-gray-400 hover:text-gray-200"
-            )}
-            aria-pressed={showRegions}
-            aria-label="Toggle region bounding boxes"
-          >
-            <Crosshair size={12} />
-            Regions
-          </button>
+          {/* Heatmap overlay toggle */}
+          {heatmapUrl && (
+            <button
+              onClick={() => setShowOverlay((v) => !v)}
+              className={cn(
+                "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition",
+                showOverlay
+                  ? "bg-accent-rose/20 text-accent-rose"
+                  : "bg-gray-800 text-gray-400 hover:text-gray-200",
+              )}
+              aria-pressed={showOverlay}
+              aria-label="Toggle heatmap overlay"
+            >
+              <Layers size={12} />
+              Overlay
+            </button>
+          )}
 
           <div className="w-px h-4 bg-gray-700 mx-1" aria-hidden="true" />
 
-          {/* Zoom */}
+          {/* Zoom controls */}
           <button
-            onClick={() => setZoom((z) => Math.min(z + 0.25, 3))}
+            onClick={() => setZoom((z) => Math.min(z + 0.25, 5))}
             className="p-1 rounded-lg bg-gray-800 text-gray-400 hover:text-white transition"
             aria-label="Zoom in"
           >
             <ZoomIn size={14} />
           </button>
           <button
-            onClick={() => setZoom((z) => Math.max(z - 0.25, 0.5))}
+            onClick={() => setZoom((z) => Math.max(z - 0.25, 0.25))}
             className="p-1 rounded-lg bg-gray-800 text-gray-400 hover:text-white transition"
             aria-label="Zoom out"
           >
             <ZoomOut size={14} />
           </button>
+
+          <div className="w-px h-4 bg-gray-700 mx-0.5" aria-hidden="true" />
+
+          {/* Rotate controls */}
           <button
-            onClick={() => setZoom(1)}
+            onClick={() => setRotation((r) => r - 90)}
             className="p-1 rounded-lg bg-gray-800 text-gray-400 hover:text-white transition"
-            aria-label="Reset zoom"
+            aria-label="Rotate counter-clockwise"
           >
             <RotateCcw size={14} />
+          </button>
+          <button
+            onClick={() => setRotation((r) => r + 90)}
+            className="p-1 rounded-lg bg-gray-800 text-gray-400 hover:text-white transition"
+            aria-label="Rotate clockwise"
+          >
+            <RotateCw size={14} />
+          </button>
+
+          <div className="w-px h-4 bg-gray-700 mx-0.5" aria-hidden="true" />
+
+          {/* Reset */}
+          <button
+            onClick={resetView}
+            className="p-1 rounded-lg bg-gray-800 text-gray-400 hover:text-white transition"
+            aria-label="Reset view"
+          >
+            <Maximize2 size={14} />
           </button>
         </div>
       </div>
 
-      {/* ── Heatmap opacity slider (only visible when heatmap is on) ── */}
-      {showHeatmap && (
+      {/* ── Heatmap opacity slider ───────────────────── */}
+      {showOverlay && heatmapUrl && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-900/80 border-b border-gray-800">
           <span className="text-[10px] text-gray-500 w-14">Opacity</span>
           <input
@@ -239,97 +248,140 @@ export function ImageViewer({
             min={0}
             max={1}
             step={0.05}
-            value={heatmapOpacity}
-            onChange={(e) => setHeatmapOpacity(parseFloat(e.target.value))}
+            value={overlayOpacity}
+            onChange={(e) => setOverlayOpacity(parseFloat(e.target.value))}
             className="flex-1 h-1 accent-accent-rose"
             aria-label="Heatmap overlay opacity"
           />
           <span className="text-[10px] text-gray-500 w-8 text-right">
-            {Math.round(heatmapOpacity * 100)}%
+            {Math.round(overlayOpacity * 100)}%
           </span>
         </div>
       )}
 
-      {/* ── Image + Canvas area ──────────────────────── */}
+      {/* ── Condition label tabs ─────────────────────── */}
+      {sorted.length > 0 && (
+        <div className="flex items-center gap-1 px-3 py-1.5 bg-gray-900/60 border-b border-gray-800 overflow-x-auto scrollbar-thin">
+          {sorted.slice(0, 8).map((score) => (
+            <button
+              key={score.label}
+              onClick={() => onSelectLabel?.(score.label)}
+              className={cn(
+                "flex-shrink-0 px-2 py-0.5 rounded-md text-[10px] font-medium transition whitespace-nowrap",
+                activeLabel === score.label
+                  ? "bg-brand-500/20 text-brand-400 ring-1 ring-brand-500/30"
+                  : "bg-gray-800 text-gray-500 hover:text-gray-300",
+              )}
+            >
+              {score.label}
+              <span className="ml-1 opacity-60">
+                {(score.probability * 100).toFixed(0)}%
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Image viewport ───────────────────────────── */}
       <div
         ref={containerRef}
-        className="relative flex items-center justify-center overflow-hidden bg-gray-950 min-h-[400px]"
+        className={cn(
+          "relative flex items-center justify-center overflow-hidden bg-gray-950 min-h-[420px]",
+          isPanning ? "cursor-grabbing" : "cursor-grab",
+        )}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        tabIndex={0}
+        role="img"
+        aria-label={`Medical image viewer${activeLabel ? ` — showing ${activeLabel} attention map` : ""}`}
       >
-        {imageUrl ? (
-          <div
-            className="relative transition-transform duration-200"
-            style={{ transform: `scale(${zoom})` }}
-          >
-            {/* Placeholder for actual DICOM/image */}
-            <div
-              className="w-[400px] h-[400px] bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg flex items-center justify-center"
-              role="img"
-              aria-label="Medical image — chest X-ray"
-            >
-              <div className="text-center">
-                <div className="text-4xl mb-2">🩻</div>
-                <span className="text-sm text-gray-500">CXR Image</span>
-                <p className="text-xs text-gray-600 mt-1">cxr-20260207.dcm</p>
-              </div>
-            </div>
+        {baseImageUrl ? (
+          <div className="relative" style={transformStyle}>
+            {/* Base medical image */}
+            <img
+              src={baseImageUrl}
+              alt="Medical image — AI analysis"
+              className={cn(
+                "max-w-[460px] max-h-[460px] rounded-lg object-contain select-none",
+                imgLoaded ? "opacity-100" : "opacity-0",
+              )}
+              onLoad={() => setImgLoaded(true)}
+              draggable={false}
+            />
 
-            {/* ── Canvas heatmap overlay ─────────────── */}
-            {showHeatmap && (
-              <canvas
-                ref={canvasRef}
-                width={SIZE}
-                height={SIZE}
-                className="absolute inset-0 rounded-lg pointer-events-none"
-                style={{ opacity: heatmapOpacity }}
-                aria-hidden="true"
+            {/* Heatmap overlay */}
+            {showOverlay && heatmapUrl && heatmapUrl !== baseImageUrl && (
+              <img
+                src={heatmapUrl}
+                alt={`Attention heatmap for ${activeLabel}`}
+                className="absolute inset-0 w-full h-full rounded-lg object-contain select-none pointer-events-none"
+                style={{ opacity: overlayOpacity, mixBlendMode: "screen" }}
+                draggable={false}
               />
             )}
 
-            {/* ── Region bounding boxes ──────────────── */}
-            {showRegions &&
-              findings?.map((f, i) =>
-                f.region_bbox ? (
-                  <div
-                    key={i}
-                    className="absolute border-2 border-accent-cyan/70 rounded-lg group cursor-pointer transition-colors hover:border-accent-cyan"
-                    style={{
-                      left: `${(f.region_bbox[0] / BBOX_GRID) * 100}%`,
-                      top: `${(f.region_bbox[1] / BBOX_GRID) * 100}%`,
-                      width: `${
-                        ((f.region_bbox[2] - f.region_bbox[0]) / BBOX_GRID) *
-                        100
-                      }%`,
-                      height: `${
-                        ((f.region_bbox[3] - f.region_bbox[1]) / BBOX_GRID) *
-                        100
-                      }%`,
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Region: ${f.finding}, confidence ${Math.round(
-                      f.confidence * 100
-                    )}%`}
-                  >
-                    {/* Label tooltip */}
-                    <div className="absolute -top-6 left-0 px-2 py-0.5 bg-accent-cyan text-white text-[10px] font-semibold rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
-                      {f.finding} ({Math.round(f.confidence * 100)}%)
-                    </div>
-                    {/* Corner markers */}
-                    <div className="absolute -top-0.5 -left-0.5 w-2 h-2 border-t-2 border-l-2 border-accent-cyan" />
-                    <div className="absolute -top-0.5 -right-0.5 w-2 h-2 border-t-2 border-r-2 border-accent-cyan" />
-                    <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b-2 border-l-2 border-accent-cyan" />
-                    <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b-2 border-r-2 border-accent-cyan" />
-                  </div>
-                ) : null
-              )}
+            {/* Loading placeholder */}
+            {!imgLoaded && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
           </div>
         ) : (
-          <div className="text-center text-gray-500">
+          <div className="text-center text-gray-500 py-12">
             <div className="text-5xl mb-3">📷</div>
-            <p className="text-sm">No image loaded</p>
+            <p className="text-sm">No medical image available</p>
+            <p className="text-xs text-gray-600 mt-1">
+              Image explainability data will appear here
+            </p>
+          </div>
+        )}
+
+        {/* Pan hint */}
+        {baseImageUrl && (
+          <div className="absolute bottom-2 left-2 flex items-center gap-1 px-2 py-1 rounded-md bg-black/60 text-gray-400 text-[9px] pointer-events-none">
+            <Move size={10} />
+            Drag to pan · Scroll to zoom · R to rotate
+          </div>
+        )}
+
+        {/* Zoom indicator */}
+        {zoom !== 1 && (
+          <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-black/60 text-gray-300 text-[10px] font-mono pointer-events-none">
+            {(zoom * 100).toFixed(0)}%
           </div>
         )}
       </div>
+
+      {/* ── Active condition badge ────────────────────── */}
+      {activeLabel && (
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-900 border-t border-gray-800">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-brand-500 animate-pulse" />
+            <span className="text-xs font-medium text-gray-300">
+              Viewing: <span className="text-white">{activeLabel}</span>
+            </span>
+          </div>
+          {activeScore && (
+            <span
+              className={cn(
+                "text-xs font-mono font-semibold",
+                activeScore.probability >= 0.3
+                  ? "text-rose-400"
+                  : "text-gray-400",
+              )}
+            >
+              {(activeScore.probability * 100).toFixed(1)}%
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

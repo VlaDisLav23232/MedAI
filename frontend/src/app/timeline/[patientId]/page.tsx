@@ -252,7 +252,7 @@ export default function TimelinePage({
               </span>
               <span className="text-xs text-gray-400">
                 {patient?.medical_record_number ?? ""} · DOB:{" "}
-                <time dateTime={patient?.dob ?? ""}>{patient?.dob ? formatDate(patient.dob) : "—"}</time>{" "}
+                <time dateTime={patient?.date_of_birth ?? ""}>{patient?.date_of_birth ? formatDate(patient.date_of_birth) : "—"}</time>{" "}
                 · {patient?.gender ?? ""}
               </span>
             </div>
@@ -410,7 +410,7 @@ export default function TimelinePage({
                                 </span>
                                 {event.severity &&
                                   event.severity !== "normal" && (
-                                    <SeverityBadge severity={event.severity} />
+                                    <SeverityBadge severity={event.severity as "low" | "moderate" | "high" | "critical" | "normal" | "warning"} />
                                   )}
                               </div>
                               <p className="text-sm font-medium text-gray-900 dark:text-white">
