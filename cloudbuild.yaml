@@ -1,0 +1,96 @@
+# Cloud Build CI/CD configuration for MedAI
+# Triggers: push to main branch
+# Builds and deploys both backend and frontend to Cloud Run
+#
+# Setup:
+#   See DEPLOY_GCP.md Section 14 for trigger creation and IAM setup.
+
+steps:
+  # ── Build and push backend ───────────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-backend:$COMMIT_SHA'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-backend:latest'
+      - './backend'
+    id: build-backend
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-backend:$COMMIT_SHA'
+    id: push-backend
+    waitFor: ['build-backend']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-backend:latest'
+    waitFor: ['build-backend']
+
+  # ── Deploy backend to Cloud Run ──────────────────────────
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_BACKEND_SERVICE}'
+      - '--image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-backend:$COMMIT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+    id: deploy-backend
+    waitFor: ['push-backend']
+
+  # ── Build and push frontend ──────────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_API_URL=${_BACKEND_URL}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-frontend:$COMMIT_SHA'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-frontend:latest'
+      - './frontend'
+    id: build-frontend
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-frontend:$COMMIT_SHA'
+    id: push-frontend
+    waitFor: ['build-frontend']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-frontend:latest'
+    waitFor: ['build-frontend']
+
+  # ── Deploy frontend to Cloud Run ─────────────────────────
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_FRONTEND_SERVICE}'
+      - '--image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-frontend:$COMMIT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+    waitFor: ['push-frontend']
+
+substitutions:
+  _REGION: us-central1
+  _AR_REPO: medai-repo
+  _BACKEND_SERVICE: medai-backend
+  _FRONTEND_SERVICE: medai-frontend
+  _BACKEND_URL: https://medai-backend-REPLACE-WITH-HASH-uc.a.run.app
+
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-backend:$COMMIT_SHA'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/medai-frontend:$COMMIT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
