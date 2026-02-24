@@ -6,7 +6,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medai.repositories.database import get_session_factory
-from medai.repositories.seed import create_admin_user, create_seed_patients, create_seed_timeline_events
+from medai.repositories.seed import create_admin_user, create_doctor_user, create_seed_patients, create_seed_timeline_events
 from medai.repositories.sqlalchemy import SqlAlchemyUserRepository, SqlAlchemyPatientRepository, SqlAlchemyTimelineRepository
 
 logger = structlog.get_logger()
@@ -19,13 +19,22 @@ async def seed_initial_data() -> None:
         try:
             # Seed admin user
             user_repo = SqlAlchemyUserRepository(session)
-            existing_admin = await user_repo.get_by_email("admin@medai.local")
+            existing_admin = await user_repo.get_by_email("admin@medai.com")
             if not existing_admin:
                 admin = create_admin_user()
                 await user_repo.create(admin)
                 logger.info("seeded_admin_user", email=admin.email)
             else:
                 logger.info("admin_user_already_exists")
+
+            # Seed demo doctor
+            existing_doctor = await user_repo.get_by_email("doctor@medai.com")
+            if not existing_doctor:
+                doctor = create_doctor_user()
+                await user_repo.create(doctor)
+                logger.info("seeded_doctor_user", email=doctor.email)
+            else:
+                logger.info("doctor_user_already_exists")
 
             # Seed demo patients
             patient_repo = SqlAlchemyPatientRepository(session)

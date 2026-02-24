@@ -23,7 +23,7 @@ export function Footer() {
           </p>
 
           <a
-            href="https://github.com/ArseniiStratiuk/Agentic-MedAI-SoftServe"
+            href="https://github.com/ArseniiStratiuk/MedAI"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white transition"

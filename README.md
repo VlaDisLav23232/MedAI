@@ -4,7 +4,7 @@
 
 **End-to-end medical AI platform with Claude orchestration, MedGemma specialist models, and explainable AI reports.**
 
-Built for the **AgentForge Hackathon** by **SoftServe**
+Built for the **MedGemma Impact Challenge** on Kaggle
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Next.js 14](https://img.shields.io/badge/Next.js-14-000000?logo=next.js&logoColor=white)](https://nextjs.org)
@@ -19,31 +19,22 @@ Built for the **AgentForge Hackathon** by **SoftServe**
 
 ## Table of Contents
 
-- [MedAI — Agentic Medical AI Assistant](#medai--agentic-medical-ai-assistant)
-  - [Table of Contents](#table-of-contents)
-  - [Overview](#overview)
-  - [Architecture](#architecture)
-    - [Core Agent Pipeline](#core-agent-pipeline)
-    - [Domain Entities](#domain-entities)
-    - [Real-time Progress (SSE)](#real-time-progress-sse)
-  - [Tech Stack](#tech-stack)
-  - [Quick Start](#quick-start)
-    - [Prerequisites](#prerequisites)
-    - [1. Clone](#1-clone)
-    - [2. Backend](#2-backend)
-    - [3. Frontend](#3-frontend)
-    - [4. Run](#4-run)
-    - [5. Default Credentials](#5-default-credentials)
-  - [Run Modes](#run-modes)
-  - [Project Structure](#project-structure)
-  - [Environment Variables](#environment-variables)
-    - [Backend (`backend/.env`)](#backend-backendenv)
-    - [Frontend (`frontend/.env.local`)](#frontend-frontendenvlocal)
-  - [API Reference](#api-reference)
-  - [GPU Model Deployment](#gpu-model-deployment)
-  - [Testing](#testing)
-  - [Docker Deployment](#docker-deployment)
-  - [License](#license)
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Prerequisites](#prerequisites)
+4. [Setup From Zero](#setup-from-zero)
+5. [Running the App](#running-the-app)
+6. [Default Login Credentials](#default-login-credentials)
+7. [Run Modes](#run-modes)
+8. [Environment Variables](#environment-variables)
+9. [Deploying GPU Models (Modal)](#deploying-gpu-models-modal)
+10. [Project Structure](#project-structure)
+11. [Tech Stack](#tech-stack)
+12. [API Reference](#api-reference)
+13. [Testing](#testing)
+14. [Docker Deployment](#docker-deployment)
+15. [Troubleshooting](#troubleshooting)
+16. [License](#license)
 
 ---
 
@@ -59,32 +50,7 @@ MedAI is a **multi-agent medical AI assistant** that combines a Claude Sonnet 4 
 - **Judge agent** — Cross-modal consistency verification before report finalization
 - **Patient timeline** — Longitudinal tracking with historical context via RAG
 
----
-
-## Table of Contents
-
-1. [What Is This?](#what-is-this)
-2. [Architecture](#architecture)
-3. [Prerequisites](#prerequisites)
-4. [Setup From Zero](#setup-from-zero)
-5. [Running the App](#running-the-app)
-6. [Default Login Credentials](#default-login-credentials)
-7. [Run Modes](#run-modes)
-8. [Environment Variables](#environment-variables)
-9. [Deploying GPU Models (Modal)](#deploying-gpu-models-modal)
-10. [Project Structure](#project-structure)
-11. [Tech Stack](#tech-stack)
-12. [API Endpoints](#api-endpoints)
-13. [Testing](#testing)
-14. [Docker Deployment](#docker-deployment)
-15. [Troubleshooting](#troubleshooting)
-16. [License](#license)
-
----
-
-## What Is This?
-
-MedAI is an **agentic medical AI assistant** that helps doctors analyze patient cases. You upload medical images, audio recordings, PDFs, or type clinical context — and the system:
+You upload medical images, audio recordings, PDFs, or type clinical context — and the system:
 
 1. **Routes** the case to the right specialist AI models (image analysis, text reasoning, audio analysis, explainability)
 2. **Runs** specialist tools in parallel on GPU via Modal cloud
@@ -174,8 +140,8 @@ These steps assume a fresh machine. Follow them in order.
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_ORG/Agentic-MedAI-SoftServe.git
-cd Agentic-MedAI-SoftServe
+git clone https://github.com/ArseniiStratiuk/MedAI.git
+cd MedAI
 ```
 
 ### Step 2: Set Up the Backend (Python)
@@ -210,7 +176,7 @@ cd ..
 cd frontend
 
 # Install JavaScript dependencies (~300MB node_modules — totally normal)
-npm install
+npm install --legacy-peer-deps
 
 # Copy environment template (default values are fine for local dev)
 cp .env.example .env.local
@@ -399,7 +365,7 @@ After deployment, Modal prints endpoint URLs. Copy them into `backend/.env`.
 ## Project Structure
 
 ```
-Agentic-MedAI-SoftServe/
+MedAI/
 ├── backend/                    # FastAPI backend
 │   ├── src/medai/
 │   │   ├── main.py             # App factory, route registration
@@ -464,7 +430,7 @@ Agentic-MedAI-SoftServe/
 |-------|-----------|
 | **Frontend** | Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, Zustand, TanStack Query, Framer Motion |
 | **Backend** | FastAPI, Python 3.11+, Pydantic v2, structlog, SQLAlchemy (async) |
-| **AI Orchestrator** | Claude Opus 4 (Anthropic) — tool-use API |
+| **AI Orchestrator** | Claude Sonnet 4 (Anthropic) — tool-use API |
 | **Image Analysis** | MedGemma 4B IT (Google) — multimodal medical image understanding |
 | **Text Reasoning** | MedGemma 27B IT (Google) — clinical text reasoning |
 | **Explainability** | MedSigLIP (Google) — zero-shot medical image classification + GradCAM heatmaps |
@@ -614,7 +580,7 @@ rm backend/medai.db
 
 ### About `node_modules/`
 
-The `frontend/node_modules/` folder (~300MB) contains JavaScript packages — this is normal for Node.js. It's never committed to git. Run `npm install` to recreate it.
+The `frontend/node_modules/` folder (~300MB) contains JavaScript packages — this is normal for Node.js. It's never committed to git. Run `npm install --legacy-peer-deps` to recreate it.
 
 ---
 

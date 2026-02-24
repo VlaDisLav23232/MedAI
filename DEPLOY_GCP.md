@@ -104,8 +104,8 @@ You will need:
 ### 2.5 Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_ORG/Agentic-MedAI-SoftServe.git
-cd Agentic-MedAI-SoftServe
+git clone https://github.com/ArseniiStratiuk/MedAI.git
+cd MedAI
 ```
 
 ---
@@ -673,8 +673,8 @@ Estimated cost: T4 VM = ~$0.35/hour = ~$252/month (will exceed free trial quickl
 gcloud compute ssh medai-gpu-t4 --zone=$GCP_ZONE
 
 # Inside the VM: clone repo, install deps, run model server
-git clone https://github.com/YOUR_ORG/Agentic-MedAI-SoftServe.git
-cd Agentic-MedAI-SoftServe
+git clone https://github.com/ArseniiStratiuk/MedAI.git
+cd MedAI
 
 pip install torch transformers accelerate
 # Run each model as a FastAPI service on different ports
@@ -794,7 +794,7 @@ options:
 
 # Then create a trigger for pushes to main:
 gcloud builds triggers create github \
-    --repo-name=Agentic-MedAI-SoftServe \
+    --repo-name=MedAI \
     --repo-owner=YOUR_GITHUB_ORG \
     --branch-pattern="^main$" \
     --build-config=cloudbuild.yaml \

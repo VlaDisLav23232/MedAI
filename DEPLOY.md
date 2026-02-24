@@ -19,7 +19,7 @@
 
 ```bash
 # 1. Clone and enter the project
-cd Agentic-MedAI-SoftServe
+cd MedAI
 
 # 2. Create .env from template
 cp .env.docker.example .env

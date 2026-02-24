@@ -212,3 +212,6 @@ plan.pdf
 
 backend/medai.db
 .medai_pids
+
+# Dev reference docs (not part of the solution)
+medgemma_technical_report.txt

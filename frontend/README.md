@@ -8,7 +8,7 @@ Production-grade Next.js 14 frontend for the **MedAI Clinical Co-Pilot** — a m
 
 ```bash
 # Install dependencies
-npm install
+npm install --legacy-peer-deps
 
 # Copy environment template
 cp .env.example .env.local   # adjust NEXT_PUBLIC_API_URL if needed

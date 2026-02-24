@@ -20,15 +20,29 @@ from medai.domain.entities import (
 
 
 def create_admin_user() -> User:
-    """Create default admin user (password: admin)."""
+    """Create default admin user (password: admin123)."""
     from medai.api.auth import hash_password
 
     return User(
         id="USR-ADMIN001",
-        email="admin@medai.local",
-        hashed_password=hash_password("admin"),
+        email="admin@medai.com",
+        hashed_password=hash_password("admin123"),
         name="System Administrator",
         role=UserRole.ADMIN,
+        is_active=True,
+    )
+
+
+def create_doctor_user() -> User:
+    """Create default doctor user (password: doctor123)."""
+    from medai.api.auth import hash_password
+
+    return User(
+        id="USR-DOCTOR01",
+        email="doctor@medai.com",
+        hashed_password=hash_password("doctor123"),
+        name="Dr. Demo Physician",
+        role=UserRole.DOCTOR,
         is_active=True,
     )
 

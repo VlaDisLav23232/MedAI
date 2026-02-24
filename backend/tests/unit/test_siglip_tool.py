@@ -157,9 +157,9 @@ class TestHttpSigLipToolPayload:
         assert len(payload["condition_labels"]) > 0
 
     def test_payload_includes_embedding_request(self, tool):
-        """Payload should request embeddings."""
+        """Payload should include return_embedding field."""
         payload = tool._build_request_payload(image_url="http://img/test.png")
-        assert payload["return_embedding"] is True
+        assert payload["return_embedding"] is False
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -225,7 +225,7 @@ class TestHttpSigLipToolParsing:
         assert result.attention_heatmap_url == "data:image/png;base64,topHeatmapB64="
 
     def test_parse_with_embedding(self, tool):
-        """Image embedding should be preserved."""
+        """Image embedding is intentionally omitted to save report space."""
         data = {
             "scores": [{"label": "test", "probability": 0.5}],
             "heatmaps": [],
@@ -234,7 +234,7 @@ class TestHttpSigLipToolParsing:
             "inference_time_ms": 50,
         }
         result = tool._parse_response(data)
-        assert result.embedding == [0.1, 0.2, 0.3, 0.4]
+        assert result.embedding is None  # omitted by design
 
     def test_parse_without_embedding(self, tool):
         """Null embedding should be handled gracefully."""
@@ -319,7 +319,7 @@ class TestHttpSigLipToolExecution:
         assert len(result.condition_scores) == 2
         assert result.condition_scores[0].probability == 0.78
         assert result.attention_heatmap_url is not None
-        assert result.embedding is not None
+        assert result.embedding is None  # omitted by design
 
     @pytest.mark.asyncio
     @respx.mock
@@ -357,7 +357,7 @@ class TestMockImageExplainabilityTool:
         assert result.modality_detected == Modality.XRAY
         assert len(result.condition_scores) >= 3
         assert result.attention_heatmap_url is not None
-        assert result.embedding is not None
+        assert result.embedding is not None  # mock tool provides embedding
         assert result.inference is not None
         assert result.inference.model_id == "google/medsiglip-448"
 
