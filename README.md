@@ -260,13 +260,15 @@ tail -f medai-logs/frontend.log
 ### Running manually (two terminals)
 
 ```bash
-# Terminal 1 — Backend
+# Terminal 1 — Backend (mock mode)
 cd backend && source ../.venv/bin/activate
-uvicorn medai.main:app --reload --port 8000
+DEBUG=true uvicorn medai.main:app --reload --port 8000
 
 # Terminal 2 — Frontend
 cd frontend && npm run dev
 ```
+
+> **Note:** `DEBUG=true` enables mock mode (no GPU endpoints needed). Omit it or set `DEBUG=false` for real mode with Modal GPU endpoints.
 
 Open **http://localhost:3000**.
 

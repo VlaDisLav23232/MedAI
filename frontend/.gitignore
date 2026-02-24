@@ -27,4 +27,4 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
+# next-env.d.ts is auto-generated but MUST be committed for TypeScript to work
