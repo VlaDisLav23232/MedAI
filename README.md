@@ -4,7 +4,7 @@
 
 **End-to-end medical AI platform with Claude orchestration, MedGemma specialist models, and explainable AI reports.**
 
-Built for the **MedGemma Impact Challenge** on Kaggle
+Built for the [**MedGemma Impact Challenge**](https://www.kaggle.com/competitions/med-gemma-impact-challenge/writeups/medai) on Kaggle
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Next.js 14](https://img.shields.io/badge/Next.js-14-000000?logo=next.js&logoColor=white)](https://nextjs.org)
