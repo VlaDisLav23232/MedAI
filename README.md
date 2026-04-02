@@ -129,7 +129,7 @@ The frontend uses **Server-Sent Events** to stream pipeline progress to the UI i
 | **Modal CLI** | Deploy GPU models | `pip install modal && modal setup` |
 | **HuggingFace account** | Access MedGemma models | [huggingface.co](https://huggingface.co/) |
 
-> **Tip:** You can run in `mock` mode without any GPU endpoints — it returns instant mock responses for development and testing.
+> **Tip:** You can run in `mock` mode without any GPU endpoints — it returns instant mock responses for development and testing
 
 ---
 
